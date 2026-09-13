@@ -24,6 +24,20 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Manual check: `FOCUS_DATA_DIR=$(mktemp -d) go run ./cmd/focus start "quick" 1`
   (non-TTY runs a headless countdown; exit codes 0 ok / 2 usage / 1 runtime).
 
+## focus pomodoro
+
+- Rotation model: `internal/focus/pomodoro.go` (`PomodoroCycle`, clock-injected
+  like `Session`); config in `internal/config` (`FOCUS_POMODORO_*_MINUTES` +
+  `FOCUS_POMODORO_BLOCKS_BEFORE_LONG`, classic 25m/5m/15m/4); command in
+  `internal/cli/pomodoro.go` (`focus pomodoro "<task>" [--blocks N,
+  --work/--short-break/--long-break/--every, --no-tui]`).
+- Breaks reuse the timer TUI in break mode (`TimerRequest.Break`, skippable
+  with `s`, never persisted); each work block completes as a normal session
+  row, so history/stats need no changes.
+- Quick rotation trial: 1-minute env overrides + `--blocks 3 --no-tui`
+  (work→short→work→long→work, ~5 min), then `history`/`stats` on the same
+  `FOCUS_DATA_DIR`.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

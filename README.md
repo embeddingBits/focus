@@ -52,6 +52,35 @@ instead, which auto-finishes when time is up:
 focus start "quick" 1 --no-tui
 ```
 
+## Pomodoro
+
+`focus pomodoro` runs the classic rotation on a task: 25-minute work blocks,
+5-minute short breaks, and a 15-minute long break after every 4 work blocks.
+
+```sh
+focus pomodoro "write report"              # rotate until you quit
+focus pomodoro "write report" --blocks 4   # stop after 4 work blocks
+```
+
+Each work block runs the full-screen timer (phase label and block `n of N`
+shown, e.g. `Work 2 of 4`) and is saved as a normal session, so `history`
+and `stats` keep working. Breaks are rest time: nothing is saved, and `s`
+skips to the next work block. Abandoning a work block (`q` twice) or
+quitting a break (`q` twice) ends the rotation.
+
+Durations default to the classics and are configurable two ways — flags win
+over environment:
+
+```sh
+focus pomodoro "write report" --work 50 --short-break 10 --long-break 30 --every 6
+FOCUS_POMODORO_WORK_MINUTES=50 FOCUS_POMODORO_SHORT_BREAK_MINUTES=10 \
+  FOCUS_POMODORO_LONG_BREAK_MINUTES=30 FOCUS_POMODORO_BLOCKS_BEFORE_LONG=6 \
+  focus pomodoro "write report"
+```
+
+Piped output (and `--no-tui`) runs plain headless countdowns instead, one
+per phase with a `=== Work 1 of 4 (25m) ===` header.
+
 Exit codes: `0` ok, `2` usage error (e.g. bad minutes or `--limit`), `1`
 runtime failure.
 
@@ -65,6 +94,11 @@ environment overrides:
   trials)
 - `FOCUS_DEFAULT_MINUTES` — default session length when minutes are omitted
   (positive integer, default `25`)
+- `FOCUS_POMODORO_WORK_MINUTES`, `FOCUS_POMODORO_SHORT_BREAK_MINUTES`,
+  `FOCUS_POMODORO_LONG_BREAK_MINUTES`, `FOCUS_POMODORO_BLOCKS_BEFORE_LONG` —
+  pomodoro rotation (positive integers, defaults `25` / `5` / `15` / `4`);
+  the matching `pomodoro` flags (`--work`, `--short-break`, `--long-break`,
+  `--every`) win over these when passed
 
 ## Design facts
 
