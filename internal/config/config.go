@@ -17,6 +17,12 @@ type Config struct {
 	DataDir       string // $XDG_DATA_HOME/focus or ~/.local/share/focus
 	DBPath        string // DataDir/focus.db
 	DefaultLength time.Duration
+	// Pomodoro rotation: work/short-break/long-break lengths and how many
+	// work blocks form one set (long break cadence).
+	PomodoroWork             time.Duration
+	PomodoroShortBreak       time.Duration
+	PomodoroLongBreak        time.Duration
+	PomodoroBlocksBeforeLong int
 }
 
 // Load resolves the config, creating DataDir (0700) on demand.
@@ -48,9 +54,57 @@ func Load() (Config, error) {
 		defLen = time.Duration(n) * time.Minute
 	}
 
+	pomWork, err := positiveMinutes("FOCUS_POMODORO_WORK_MINUTES", focus.DefaultPomodoroWork)
+	if err != nil {
+		return Config{}, err
+	}
+	pomShort, err := positiveMinutes("FOCUS_POMODORO_SHORT_BREAK_MINUTES", focus.DefaultPomodoroShortBreak)
+	if err != nil {
+		return Config{}, err
+	}
+	pomLong, err := positiveMinutes("FOCUS_POMODORO_LONG_BREAK_MINUTES", focus.DefaultPomodoroLongBreak)
+	if err != nil {
+		return Config{}, err
+	}
+	pomEvery, err := positiveInt("FOCUS_POMODORO_BLOCKS_BEFORE_LONG", focus.DefaultBlocksBeforeLong)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
-		DataDir:       dataDir,
-		DBPath:        filepath.Join(dataDir, "focus.db"),
-		DefaultLength: defLen,
+		DataDir:                  dataDir,
+		DBPath:                   filepath.Join(dataDir, "focus.db"),
+		DefaultLength:            defLen,
+		PomodoroWork:             pomWork,
+		PomodoroShortBreak:       pomShort,
+		PomodoroLongBreak:        pomLong,
+		PomodoroBlocksBeforeLong: pomEvery,
 	}, nil
+}
+
+// positiveMinutes resolves an env override holding positive integer minutes;
+// empty means def. Garbage or non-positive values are usage errors.
+func positiveMinutes(name string, def time.Duration) (time.Duration, error) {
+	n, err := positiveInt(name, 0)
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return def, nil
+	}
+	return time.Duration(n) * time.Minute, nil
+}
+
+// positiveInt resolves an env override holding a positive integer; empty
+// means def (which may itself be 0 to signal "unset").
+func positiveInt(name string, def int) (int, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("invalid %s %q: must be a positive integer", name, raw)
+	}
+	return n, nil
 }
