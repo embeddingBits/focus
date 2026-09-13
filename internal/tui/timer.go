@@ -27,11 +27,19 @@ const maxBarWidth = 80
 // minBarWidth keeps the progress bar usable on narrow terminals.
 const minBarWidth = 20
 
-// TimerRequest configures one timer run (frozen plan §10 — exact shape).
+// TimerRequest configures one timer run (frozen plan §10 — exact shape,
+// plus optional pomodoro fields, zero-valued for plain sessions).
 type TimerRequest struct {
 	Task    string
 	Planned time.Duration
 	Elapsed func() time.Duration // optional hook; default wall-clock from time.Now
+	// PhaseLabel names the pomodoro phase in the timer view
+	// (e.g. "Work 1 of 4", "Short break"); empty hides the line.
+	PhaseLabel string
+	// Break marks a rest phase: no accomplishment prompts — s skips the
+	// break and expiry auto-completes (both Completed=true); double-q
+	// quits (Completed=false).
+	Break bool
 }
 
 // TimerResult is the outcome of one timer run (frozen plan §10 — exact shape).
@@ -79,11 +87,13 @@ func tick() tea.Cmd {
 }
 
 type timerModel struct {
-	task      string
-	planned   time.Duration
-	elapsedFn func() time.Duration // gross elapsed hook, nil = wall clock
-	now       func() time.Time     // clock for pause accounting (tests inject a fake)
-	startTime time.Time
+	task       string
+	planned    time.Duration
+	elapsedFn  func() time.Duration // gross elapsed hook, nil = wall clock
+	phaseLabel string
+	isBreak    bool
+	now        func() time.Time // clock for pause accounting (tests inject a fake)
+	startTime  time.Time
 
 	paused      bool
 	pausedAt    time.Time
@@ -130,18 +140,20 @@ func newTimerModel(req TimerRequest) timerModel {
 	focusCmd := acc.Focus()
 
 	return timerModel{
-		task:      task,
-		planned:   planned,
-		elapsedFn: req.Elapsed,
-		now:       time.Now,
-		startTime: time.Now(),
-		progress:  bar,
-		width:     40,
-		view:      viewTimer,
-		accInput:  acc,
-		nextInput: next,
-		focusIdx:  0,
-		initCmd:   focusCmd,
+		task:       task,
+		planned:    planned,
+		elapsedFn:  req.Elapsed,
+		phaseLabel: req.PhaseLabel,
+		isBreak:    req.Break,
+		now:        time.Now,
+		startTime:  time.Now(),
+		progress:   bar,
+		width:      40,
+		view:       viewTimer,
+		accInput:   acc,
+		nextInput:  next,
+		focusIdx:   0,
+		initCmd:    focusCmd,
 	}
 }
 
@@ -206,6 +218,16 @@ func (m timerModel) abandonResult() TimerResult {
 	}
 }
 
+// skipResult ends a break phase: the break is over (skipped or elapsed) so
+// the rotation continues. It carries no accomplishment prompts.
+func (m timerModel) skipResult() TimerResult {
+	return TimerResult{
+		Completed:    true,
+		ElapsedTotal: m.elapsed(),
+		PausedTotal:  m.pausedTotal,
+	}
+}
+
 // Init arms the 1s tick and the textinput cursor blink.
 func (m timerModel) Init() tea.Cmd {
 	return tea.Batch(tick(), m.initCmd)
@@ -252,6 +274,12 @@ func (m timerModel) onTick() (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.view == viewTimer && m.remaining() <= 0 {
+		if m.isBreak {
+			m.settlePause()
+			m.done = true
+			m.result = m.skipResult()
+			return m, tea.Quit
+		}
 		m.enterPrompt()
 		return m, nil
 	}
@@ -280,6 +308,12 @@ func (m timerModel) updateTimer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "s":
 		m.qArmed = false
+		if m.isBreak {
+			m.settlePause()
+			m.done = true
+			m.result = m.skipResult()
+			return m, tea.Quit
+		}
 		m.enterPrompt()
 		return m, nil
 	case "q":
@@ -422,7 +456,11 @@ func (m timerModel) View() string {
 func (m timerModel) viewTimer() string {
 	var b strings.Builder
 
-	b.WriteString(styleTitle.Render(m.task) + "\n\n")
+	b.WriteString(styleTitle.Render(m.task) + "\n")
+	if strings.TrimSpace(m.phaseLabel) != "" {
+		b.WriteString(styleLabel.Render(strings.TrimSpace(m.phaseLabel)) + "\n")
+	}
+	b.WriteString("\n")
 
 	b.WriteString(styleLabel.Render("Elapsed   ") + styleTime.Render(fmtHMS(m.elapsed())) + "\n")
 	b.WriteString(styleLabel.Render("Remaining ") + styleTime.Render(fmtHMS(m.remaining())) + "\n\n")
@@ -439,9 +477,16 @@ func (m timerModel) viewTimer() string {
 		b.WriteString(styleBad.Render("Press q again to abandon this session.") + "\n\n")
 	}
 
-	footer := styleKey.Render("p") + styleFooter.Render(" pause/resume · ") +
-		styleKey.Render("s") + styleFooter.Render(" finish · ") +
-		styleKey.Render("q") + styleFooter.Render(" abandon")
+	var footer string
+	if m.isBreak {
+		footer = styleKey.Render("p") + styleFooter.Render(" pause/resume · ") +
+			styleKey.Render("s") + styleFooter.Render(" skip break · ") +
+			styleKey.Render("q") + styleFooter.Render(" quit")
+	} else {
+		footer = styleKey.Render("p") + styleFooter.Render(" pause/resume · ") +
+			styleKey.Render("s") + styleFooter.Render(" finish · ") +
+			styleKey.Render("q") + styleFooter.Render(" abandon")
+	}
 	b.WriteString(footer)
 
 	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
