@@ -33,7 +33,7 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newStartCmd(), newHistoryCmd(), newStatsCmd())
+	root.AddCommand(newStartCmd(), newPomodoroCmd(), newHistoryCmd(), newStatsCmd())
 	return root
 }
 
@@ -202,6 +202,17 @@ func isTTY() bool {
 // --no-tui), then auto-finishes with empty prompts. It blocks for the full
 // planned duration.
 func runHeadless(cmd *cobra.Command, planned time.Duration) (tui.TimerResult, error) {
+	if err := countdown(cmd.Context(), cmd.OutOrStdout(), planned); err != nil {
+		return tui.TimerResult{}, err
+	}
+	return tui.TimerResult{Completed: true, ElapsedTotal: planned}, nil
+}
+
+// countdown blocks for the full planned duration, ticking once a second.
+// Shared by `start --no-tui` and the headless pomodoro phases.
+func countdown(ctx context.Context, out interface {
+	Write([]byte) (int, error)
+}, planned time.Duration) error {
 	deadline := time.Now().Add(planned)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -210,16 +221,16 @@ func runHeadless(cmd *cobra.Command, planned time.Duration) (tui.TimerResult, er
 		if rem <= 0 {
 			break
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "\rremaining %s", rem)
+		fmt.Fprintf(out, "\rremaining %s", rem)
 		select {
-		case <-cmd.Context().Done():
-			fmt.Fprintln(cmd.OutOrStdout())
-			return tui.TimerResult{}, cmd.Context().Err()
+		case <-ctx.Done():
+			fmt.Fprintln(out)
+			return ctx.Err()
 		case <-ticker.C:
 		}
 	}
-	fmt.Fprintln(cmd.OutOrStdout())
-	return tui.TimerResult{Completed: true, ElapsedTotal: planned}, nil
+	fmt.Fprintln(out)
+	return nil
 }
 
 // ExitCode maps an Execute error to the process exit code: 0 ok, 2 usage, 1 runtime.
