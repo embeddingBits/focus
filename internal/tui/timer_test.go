@@ -225,8 +225,58 @@ func TestWindowSizeClampsBar(t *testing.T) {
 		t.Fatalf("narrow width: bar = %d, want %d", m.progress.Width, minBarWidth)
 	}
 	m, _ = step(m, tea.WindowSizeMsg{Width: 60, Height: 20})
-	if m.progress.Width != 56 {
-		t.Fatalf("normal width: bar = %d, want 56", m.progress.Width)
+	if m.progress.Width != 48 {
+		t.Fatalf("normal width: bar = %d, want 48 (terminal minus box chrome)", m.progress.Width)
+	}
+}
+
+func TestFramedViewCenteredSquareBox(t *testing.T) {
+	m, _ := newTestModel(time.Hour, nil)
+	m, _ = step(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	out := m.View()
+
+	// Square corners (radius 0): NormalBorder, never rounded.
+	for _, corner := range []string{"┌", "┐", "└", "┘"} {
+		if !strings.Contains(out, corner) {
+			t.Fatalf("framed view missing square corner %q:\n%s", corner, out)
+		}
+	}
+	for _, rounded := range []string{"╭", "╮", "╰", "╯"} {
+		if strings.Contains(out, rounded) {
+			t.Fatalf("framed view must not use rounded corner %q:\n%s", rounded, out)
+		}
+	}
+
+	// Centered: output fills exactly the terminal, every line full width.
+	lines := strings.Split(out, "\n")
+	if len(lines) != 24 {
+		t.Fatalf("framed view height = %d lines, want 24:\n%s", len(lines), out)
+	}
+	for i, line := range lines {
+		if w := len([]rune(line)); w != 100 {
+			t.Fatalf("line %d width = %d, want 100:\n%s", i, w, out)
+		}
+	}
+}
+
+func TestBreakViewFramed(t *testing.T) {
+	m, _ := newTestModel(time.Hour, nil)
+	m, _ = step(m, tea.WindowSizeMsg{Width: 100, Height: 24})
+	m, _ = step(m, keyRune("b"))
+	out := m.View()
+	for _, corner := range []string{"┌", "┐", "└", "┘"} {
+		if !strings.Contains(out, corner) {
+			t.Fatalf("break view missing square corner %q:\n%s", corner, out)
+		}
+	}
+	lines := strings.Split(out, "\n")
+	if len(lines) != 24 {
+		t.Fatalf("break view height = %d lines, want 24:\n%s", len(lines), out)
+	}
+	for i, line := range lines {
+		if w := len([]rune(line)); w != 100 {
+			t.Fatalf("break line %d width = %d, want 100:\n%s", i, w, out)
+		}
 	}
 }
 

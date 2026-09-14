@@ -28,6 +28,11 @@ const DefaultBreak = 5 * time.Minute
 // maxBarWidth caps the progress bar width on wide terminals.
 const maxBarWidth = 80
 
+// frameChromeH is the horizontal chrome of styleBox: 2 border columns +
+// 2×3 padding. The progress bar reserves it so the framed box fits the
+// terminal instead of overflowing it.
+const frameChromeH = 8
+
 // minBarWidth keeps the progress bar usable on narrow terminals.
 const minBarWidth = 20
 
@@ -131,6 +136,8 @@ type timerModel struct {
 
 	progress progress.Model
 	width    int
+	termW    int // last WindowSizeMsg width (0 = unknown)
+	termH    int // last WindowSizeMsg height (0 = unknown)
 
 	view      timerView
 	accInput  textinput.Model
@@ -257,7 +264,7 @@ func (m timerModel) Init() tea.Cmd {
 func (m timerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		w := msg.Width - 4
+		w := msg.Width - 4 - frameChromeH
 		if w < minBarWidth {
 			w = minBarWidth
 		}
@@ -267,6 +274,8 @@ func (m timerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Width > 0 {
 			m.width = w
 			m.progress.Width = w
+			m.termW = msg.Width
+			m.termH = msg.Height
 		}
 		return m, nil
 
@@ -639,6 +648,13 @@ var (
 	styleHeader   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 )
 
+// styleBox frames full-screen views: a sharp-cornered (radius 0) normal
+// border with inner padding. Centered in the terminal by frame().
+var styleBox = lipgloss.NewStyle().
+	Border(lipgloss.NormalBorder()).
+	BorderForeground(lipgloss.Color("8")).
+	Padding(1, 3)
+
 // fmtHMS renders d as HH:MM:SS, clamping negatives to 00:00:00.
 func fmtHMS(d time.Duration) string {
 	if d < 0 {
@@ -684,6 +700,17 @@ func (m timerModel) View() string {
 	return m.viewTimer()
 }
 
+// frame wraps full-screen content in the radius-0 box and centers it in
+// the terminal. Before the first WindowSizeMsg (termW/H unknown, e.g. in
+// tests) it returns the box uncentered.
+func (m timerModel) frame(content string) string {
+	boxed := styleBox.Render(content)
+	if m.termW <= 0 || m.termH <= 0 {
+		return boxed
+	}
+	return lipgloss.Place(m.termW, m.termH, lipgloss.Center, lipgloss.Center, boxed)
+}
+
 func (m timerModel) viewBreak() string {
 	var b strings.Builder
 
@@ -703,14 +730,13 @@ func (m timerModel) viewBreak() string {
 			styleKey.Render("esc") + styleFooter.Render(" cancel")
 	} else {
 		footer = styleKey.Render("up/down") + styleFooter.Render(" adjust · ") +
-			styleKey.Render("left/right") + styleFooter.Render(" field · ") +
-			styleKey.Render("enter") + styleFooter.Render(" start break · ") +
-			styleKey.Render("s") + styleFooter.Render(" start · ") +
+			styleKey.Render("left/right") + styleFooter.Render(" field") + "\n" +
+			styleKey.Render("enter") + styleFooter.Render(" start · ") +
 			styleKey.Render("esc") + styleFooter.Render(" cancel")
 	}
 	b.WriteString(footer)
 
-	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
+	return m.frame(b.String())
 }
 
 // renderBreakClock renders the break editor/remaining time as hh:mm:ss. In
@@ -765,7 +791,7 @@ func (m timerModel) viewTimer() string {
 		styleKey.Render("b") + styleFooter.Render(" break")
 	b.WriteString(footer)
 
-	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
+	return m.frame(b.String())
 }
 
 func (m timerModel) viewPrompt() string {
@@ -785,5 +811,5 @@ func (m timerModel) viewPrompt() string {
 		styleKey.Render("esc") + styleFooter.Render(" back")
 	b.WriteString(footer)
 
-	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
+	return m.frame(b.String())
 }
