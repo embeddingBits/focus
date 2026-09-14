@@ -108,7 +108,7 @@ func TestBreakStepsAndFieldMoves(t *testing.T) {
 		t.Fatalf("HH down from 01:05 = %v, want 00:05", m.breakRemain)
 	}
 
-	// Left stops at HH; right stops at MM (Qt semantics, no wrap).
+	// Left stops at HH; right walks HH→MM→SS and stops at SS.
 	m, _ = step(m, keyType(tea.KeyLeft))
 	if m.breakSel != breakFieldHH {
 		t.Fatal("left at HH should stay on HH")
@@ -118,8 +118,28 @@ func TestBreakStepsAndFieldMoves(t *testing.T) {
 		t.Fatal("right from HH should select MM")
 	}
 	m, _ = step(m, keyType(tea.KeyRight))
+	if m.breakSel != breakFieldSS {
+		t.Fatal("right from MM should select SS")
+	}
+	m, _ = step(m, keyType(tea.KeyRight))
+	if m.breakSel != breakFieldSS {
+		t.Fatal("right at SS should stay on SS")
+	}
+	m, _ = step(m, keyType(tea.KeyLeft))
 	if m.breakSel != breakFieldMM {
-		t.Fatal("right at MM should stay on MM")
+		t.Fatal("left from SS should select MM")
+	}
+
+	// Seconds step by one second with no carry into minutes.
+	m, _ = step(m, keyType(tea.KeyRight)) // back to SS
+	before := m.breakRemain
+	m, _ = step(m, keyType(tea.KeyUp))
+	if m.breakRemain != before+time.Second {
+		t.Fatalf("SS up = %v, want %v", m.breakRemain, before+time.Second)
+	}
+	m, _ = step(m, keyType(tea.KeyDown))
+	if m.breakRemain != before {
+		t.Fatalf("SS down = %v, want %v", m.breakRemain, before)
 	}
 }
 
@@ -202,23 +222,96 @@ func TestBreakClampUpCapsNoCarryNoWrap(t *testing.T) {
 	}
 }
 
-func TestBreakStepToZeroPinsSeconds(t *testing.T) {
+func TestBreakStepPreservesSeconds(t *testing.T) {
 	m, _ := newTestModel(time.Hour, nil)
 	m, _ = step(m, keyRune("b"))
-	m.breakRemain = 90 * time.Second // 00:01:30 mid-countdown value
+	m.breakRemain = 90 * time.Second // 00:01:30 editor value
+	m.breakPlanned = m.breakRemain
 	m.breakSel = breakFieldMM
 	m, _ = step(m, keyType(tea.KeyDown))
+	if m.breakRemain != 30*time.Second {
+		t.Fatalf("MM down from 00:01:30 = %v, want 00:00:30 (seconds preserved)", m.breakRemain)
+	}
+	// SS steps down to zero clamp without going negative.
+	m.breakSel = breakFieldSS
+	for range 30 {
+		m, _ = step(m, keyType(tea.KeyDown))
+	}
 	if m.breakRemain != 0 {
-		t.Fatalf("step to 00:00 = %v, want pinned 0 (no stale seconds)", m.breakRemain)
+		t.Fatalf("SS down to zero = %v, want 0", m.breakRemain)
+	}
+	m, _ = step(m, keyType(tea.KeyDown))
+	if m.breakRemain != 0 {
+		t.Fatalf("SS down at 00:00:00 = %v, want stay at 0", m.breakRemain)
 	}
 }
 
-func TestBreakTickDecrementsWallDelta(t *testing.T) {
+func TestBreakSecondsClampUpNoCarry(t *testing.T) {
+	m, _ := newTestModel(time.Hour, nil)
+	m, _ = step(m, keyRune("b"))
+	m.breakRemain = 59 * time.Second
+	m.breakPlanned = m.breakRemain
+	m.breakSel = breakFieldSS
+	m, _ = step(m, keyType(tea.KeyUp))
+	if m.breakRemain != 59*time.Second {
+		t.Fatalf("SS up at 59s = %v, want cap stay, no carry", m.breakRemain)
+	}
+}
+
+func TestBreakEnterStartsFrozenTimer(t *testing.T) {
+	m, fc, hook := enterBreakFromWork(t, time.Hour)
+	if m.breakRunning {
+		t.Fatal("break must not be running on entry; it waits for enter/s")
+	}
+	fc.advance(30 * time.Second)
+	m, _ = step(m, tickMsg(fc.now))
+	if m.breakRemain != 5*time.Minute {
+		t.Fatalf("remain during edit idle = %v, want frozen 5m", m.breakRemain)
+	}
+	m, _ = step(m, keyType(tea.KeyEnter))
+	if !m.breakRunning || m.view != viewBreak {
+		t.Fatal("enter in editor should start the break, staying in break view")
+	}
+	if m.breakPlanned != 5*time.Minute {
+		t.Fatalf("planned at start = %v, want 5m", m.breakPlanned)
+	}
+	if len(hook.calls) != 0 {
+		t.Fatalf("starting must persist nothing, got %d calls", len(hook.calls))
+	}
+}
+
+func TestBreakTakenExcludesEditIdle(t *testing.T) {
+	m, fc, hook := enterBreakFromWork(t, time.Hour)
+	fc.advance(30 * time.Second) // editing idle: work pause, not break time
+	m, _ = step(m, keyType(tea.KeyEnter))
+	fc.advance(time.Minute)
+	m, _ = step(m, tickMsg(fc.now))
+	m, _ = step(m, keyType(tea.KeyEnter))
+	if len(hook.calls) != 1 {
+		t.Fatalf("want 1 break row, got %d", len(hook.calls))
+	}
+	if hook.calls[0].Taken != time.Minute {
+		t.Fatalf("Taken = %v, want 1m (edit idle excluded)", hook.calls[0].Taken)
+	}
+	if m.pausedTotal != 90*time.Second {
+		t.Fatalf("pausedTotal = %v, want edit+run folded (90s)", m.pausedTotal)
+	}
+}
+
+func TestBreakTickFrozenBeforeStartDecrementsAfter(t *testing.T) {
 	m, fc, _ := enterBreakFromWork(t, time.Hour)
+	// Editing phase: ticks leave the countdown frozen.
+	fc.advance(70 * time.Second)
+	m, _ = step(m, tickMsg(fc.now))
+	if m.breakRemain != 5*time.Minute {
+		t.Fatalf("remain before start = %v, want frozen 5m", m.breakRemain)
+	}
+	// After enter starts it, ticks decrement wall-clock delta.
+	m, _ = step(m, keyType(tea.KeyEnter))
 	fc.advance(70 * time.Second)
 	m, _ = step(m, tickMsg(fc.now))
 	if m.breakRemain != 5*time.Minute-70*time.Second {
-		t.Fatalf("remain after 70s = %v, want 3m50s", m.breakRemain)
+		t.Fatalf("remain after 70s running = %v, want 3m50s", m.breakRemain)
 	}
 	if m.view != viewBreak {
 		t.Fatal("break should still be active after 70s of a 5m break")
@@ -230,6 +323,7 @@ func TestBreakTickDecrementsWallDelta(t *testing.T) {
 
 func TestBreakExpiryEndsResumesAndPersists(t *testing.T) {
 	m, fc, hook := enterBreakFromWork(t, time.Hour)
+	m, _ = step(m, keyType(tea.KeyEnter)) // start
 	fc.advance(5*time.Minute + time.Second)
 	m, _ = step(m, tickMsg(fc.now))
 
@@ -262,9 +356,10 @@ func TestBreakExpiryEndsResumesAndPersists(t *testing.T) {
 
 func TestBreakEnterEndsEarlySamePath(t *testing.T) {
 	m, fc, hook := enterBreakFromWork(t, time.Hour)
+	m, _ = step(m, keyType(tea.KeyEnter)) // start
 	fc.advance(time.Minute)
-	m, _ = step(m, tickMsg(fc.now)) // remain 4:00
-	m, _ = step(m, keyType(tea.KeyEnter))
+	m, _ = step(m, tickMsg(fc.now))       // remain 4:00
+	m, _ = step(m, keyType(tea.KeyEnter)) // end early
 
 	if m.view != viewTimer || m.paused {
 		t.Fatal("enter should end break and resume work")
@@ -304,9 +399,13 @@ func TestBreakEnterOnZeroCancels(t *testing.T) {
 
 func TestBreakSEndsEarly(t *testing.T) {
 	m, fc, hook := enterBreakFromWork(t, time.Hour)
+	m, _ = step(m, keyRune("s")) // start via s
+	if !m.breakRunning {
+		t.Fatal("s in editor should start the break")
+	}
 	fc.advance(45 * time.Second)
 	m, _ = step(m, tickMsg(fc.now))
-	m, _ = step(m, keyRune("s"))
+	m, _ = step(m, keyRune("s")) // end early
 
 	if m.view != viewTimer || m.paused {
 		t.Fatal("s should end break early and resume work")
@@ -372,6 +471,11 @@ func TestBreakBDoesNothing(t *testing.T) {
 	if m.breakRemain != before || m.breakSel != breakFieldMM || m.view != viewBreak {
 		t.Fatal("b during break must not re-snapshot or leave the view")
 	}
+	m, _ = step(m, keyType(tea.KeyEnter)) // start
+	m, _ = step(m, keyRune("b"))
+	if m.view != viewBreak || !m.breakRunning {
+		t.Fatal("b during running break must stay in break view")
+	}
 }
 
 func TestBreakPIsNoop(t *testing.T) {
@@ -382,6 +486,19 @@ func TestBreakPIsNoop(t *testing.T) {
 	m, _ = step(m, keyRune("p"))
 	if m.view != viewBreak || !m.paused || m.breakRemain != before {
 		t.Fatal("p during break must leave break state untouched")
+	}
+}
+
+func TestBreakArrowsLockedWhileRunning(t *testing.T) {
+	m, _, _ := enterBreakFromWork(t, time.Hour)
+	m, _ = step(m, keyType(tea.KeyEnter))
+	before := m.breakRemain
+	m, _ = step(m, keyType(tea.KeyUp))
+	m, _ = step(m, keyType(tea.KeyDown))
+	m, _ = step(m, keyType(tea.KeyLeft))
+	m, _ = step(m, keyType(tea.KeyRight))
+	if m.breakRemain != before {
+		t.Fatalf("arrows while running must not adjust, got %v want %v", m.breakRemain, before)
 	}
 }
 
@@ -399,6 +516,7 @@ func TestBreakCtrlCAbandons(t *testing.T) {
 func TestBreakAdjustPersistsChosenLength(t *testing.T) {
 	m, fc, hook := enterBreakFromWork(t, time.Hour)
 	m, _ = step(m, keyType(tea.KeyUp)) // MM 5 → 6, chosen 6:00
+	m, _ = step(m, keyType(tea.KeyEnter))
 	fc.advance(time.Minute)
 	m, _ = step(m, tickMsg(fc.now))
 	m, _ = step(m, keyType(tea.KeyEnter))

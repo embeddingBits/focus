@@ -28,10 +28,11 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 - Break editor lives in `internal/tui/timer.go` (`viewBreak`): `b` during a
   `focus start` session opens a fresh 5-minute break (adjustable hh:mm:ss,
-  up/down step selected HH/MM field, left/right move between fields, clamp
-  no-wrap, seconds pinned :00). Enter/`s` starts the break; `esc`/`q`
-  cancels. Work session auto-pauses underneath; break wall time folds into
-  `pausedTotal` on return.
+  up/down step selected HH/MM/SS field by 1h/1m/1s, left/right move between
+  the three fields, clamp no-wrap). Editor stays frozen until enter/`s`
+  starts the countdown; a second enter/`s` ends it early, `esc`/`q` cancels.
+  Work session auto-pauses underneath; whole break-view wall time folds into
+  `pausedTotal` on return, while persisted `Taken` spans timer start→end only.
 - Persistence: `internal/cli/root.go` `breakPersistHook` writes
   `Kind='break'` rows via `SessionRecord.Kind` (`internal/focus/store.go`).
   `StatsToday` excludes breaks (`kind='focus'` only); `history` shows a

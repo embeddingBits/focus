@@ -54,13 +54,13 @@ type BreakInfo struct {
 	EndedAt   time.Time
 }
 
-// breakField is which HH/MM field the break editor steps. Seconds are
-// display-only and never selectable.
+// breakField is which HH/MM/SS field the break editor steps.
 type breakField int
 
 const (
 	breakFieldHH breakField = iota
 	breakFieldMM
+	breakFieldSS
 )
 
 // TimerResult is the outcome of one timer run (frozen plan §10 — exact shape).
@@ -122,11 +122,12 @@ type timerModel struct {
 	breakDefault time.Duration
 	onBreak      func(BreakInfo)
 
-	breakRemain  time.Duration // live countdown value, ticks down in viewBreak
-	breakPlanned time.Duration // last editor-chosen length (persisted as planned)
+	breakRemain  time.Duration // live countdown value, ticks down once started
+	breakPlanned time.Duration // editor-chosen length at start (persisted as planned)
 	breakSel     breakField    // field stepped by up/down
-	breakStart   time.Time     // wall entry into the break (Taken anchor)
+	breakStart   time.Time     // break timer start (Taken anchor; zero until started)
 	breakTick    time.Time     // last tick seen (wall-delta anchor)
+	breakRunning bool          // false = editing (frozen), true = countdown running
 
 	progress progress.Model
 	width    int
@@ -296,7 +297,13 @@ func (m timerModel) onTick() (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.view == viewBreak {
-		// Break countdown ticks wall-clock delta from entry; the work
+		if !m.breakRunning {
+			// Editing phase: countdown frozen until enter/s starts it.
+			// The work session stays auto-paused underneath.
+			pctCmd := m.progress.SetPercent(m.progressPct())
+			return m, tea.Batch(tick(), pctCmd)
+		}
+		// Running break ticks wall-clock delta from start; the work
 		// session stays auto-paused underneath (elapsed math frozen).
 		now := m.now()
 		m.breakRemain -= now.Sub(m.breakTick)
@@ -368,8 +375,10 @@ func (m *timerModel) settlePause() {
 // enterBreak snapshots a fresh break (DefaultBreak unless BreakDefault
 // overrides), selects the minutes field, and auto-pauses the work session —
 // reusing the paused math untouched, so elapsed/remaining freeze exactly as
-// if p had been pressed. Any pending q-arm is cleared: the break is a
-// transient editor, and abandoning it must never be one keypress away.
+// if p had been pressed. The break countdown stays frozen in the editor
+// until enter/s starts it (breakRunning=false). Any pending q-arm is
+// cleared: the break is a transient editor, and abandoning it must never be
+// one keypress away.
 func (m *timerModel) enterBreak() {
 	d := m.breakDefault
 	if d <= 0 {
@@ -379,14 +388,26 @@ func (m *timerModel) enterBreak() {
 	m.breakRemain = d
 	m.breakPlanned = d
 	m.breakSel = breakFieldMM
-	m.breakStart = now
+	m.breakStart = time.Time{}
 	m.breakTick = now
+	m.breakRunning = false
 	if !m.paused {
 		m.paused = true
 		m.pausedAt = now
 	}
 	m.qArmed = false
 	m.view = viewBreak
+}
+
+// startBreak moves the break from the frozen editor into the running
+// countdown: the chosen length freezes as planned and the Taken anchor
+// starts here, so editor idle time is work-pause but not break time.
+func (m *timerModel) startBreak() {
+	now := m.now()
+	m.breakPlanned = m.breakRemain
+	m.breakStart = now
+	m.breakTick = now
+	m.breakRunning = true
 }
 
 // finishBreak ends the break (expiry, enter, or s): resumes work with the
@@ -426,28 +447,26 @@ func clampField(v, lo, hi int) int {
 	return v
 }
 
-// stepBreakField steps the selected HH/MM field by dh hours / dm minutes with
-// Qt section semantics (research §2.2): each field saturates independently —
-// clamp everywhere, no carry, no wrap. Seconds are display-only and
-// preserved, except a step landing on 00:00 pins them to :00 so a zero break
-// can expire instead of lingering on stale seconds.
-func (m *timerModel) stepBreakField(dh, dm int) {
+// stepBreakField steps the selected HH/MM/SS field by dh hours / dm minutes /
+// ds seconds with Qt section semantics (research §2.2): each field saturates
+// independently — clamp everywhere, no carry, no wrap.
+func (m *timerModel) stepBreakField(dh, dm, ds int) {
 	total := m.breakRemain
 	if total < 0 {
 		total = 0
 	}
-	secs := total % time.Minute
+	sec := int((total % time.Minute) / time.Second)
 	h := int(total / time.Hour)
 	min := int((total % time.Hour) / time.Minute)
-	if m.breakSel == breakFieldHH {
+	switch m.breakSel {
+	case breakFieldHH:
 		h = clampField(h+dh, 0, 23)
-	} else {
+	case breakFieldMM:
 		min = clampField(min+dm, 0, 59)
+	default:
+		sec = clampField(sec+ds, 0, 59)
 	}
-	m.breakRemain = time.Duration(h)*time.Hour + time.Duration(min)*time.Minute + secs
-	if h == 0 && min == 0 {
-		m.breakRemain = 0
-	}
+	m.breakRemain = time.Duration(h)*time.Hour + time.Duration(min)*time.Minute + time.Duration(sec)*time.Second
 	m.breakPlanned = m.breakRemain
 }
 
@@ -474,31 +493,50 @@ func arrowKey(msg tea.KeyMsg) string {
 	return ""
 }
 
-// updateBreak handles keys in the break editor/countdown view: up/down step
-// the selected field, left/right move between HH and MM (stopping at the
-// ends), enter/s end the break (persisting unless the choice is 00:00),
-// esc/q cancel (persist nothing), ctrl+c keeps the timer abandon semantics.
-// b does nothing during a break (no re-snapshot); p is a no-op (work is
-// already auto-paused and the break ticks wall-clock).
+// updateBreak handles keys in the break editor/countdown view. Editing phase
+// (frozen): up/down step the selected HH/MM/SS field, left/right move
+// between the three fields (stopping at the ends), enter/s start the
+// countdown (00:00:00 cancels instead), esc/q cancel (persist nothing).
+// Running phase: the countdown ticks; enter/s end it early (persisting),
+// esc/q cancel (persist nothing), arrows are ignored. ctrl+c keeps the timer
+// abandon semantics. b does nothing during a break (no re-snapshot); p is a
+// no-op (work is already auto-paused).
 func (m timerModel) updateBreak(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if dir := arrowKey(msg); dir != "" {
+		if m.breakRunning {
+			return m, nil
+		}
 		switch dir {
 		case "up":
-			if m.breakSel == breakFieldHH {
-				m.stepBreakField(1, 0)
-			} else {
-				m.stepBreakField(0, 1)
+			switch m.breakSel {
+			case breakFieldHH:
+				m.stepBreakField(1, 0, 0)
+			case breakFieldMM:
+				m.stepBreakField(0, 1, 0)
+			default:
+				m.stepBreakField(0, 0, 1)
 			}
 		case "down":
-			if m.breakSel == breakFieldHH {
-				m.stepBreakField(-1, 0)
-			} else {
-				m.stepBreakField(0, -1)
+			switch m.breakSel {
+			case breakFieldHH:
+				m.stepBreakField(-1, 0, 0)
+			case breakFieldMM:
+				m.stepBreakField(0, -1, 0)
+			default:
+				m.stepBreakField(0, 0, -1)
 			}
 		case "left":
-			m.breakSel = breakFieldHH
+			if m.breakSel == breakFieldSS {
+				m.breakSel = breakFieldMM
+			} else {
+				m.breakSel = breakFieldHH
+			}
 		case "right":
-			m.breakSel = breakFieldMM
+			if m.breakSel == breakFieldHH {
+				m.breakSel = breakFieldMM
+			} else {
+				m.breakSel = breakFieldSS
+			}
 		}
 		return m, nil
 	}
@@ -509,13 +547,17 @@ func (m timerModel) updateBreak(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.result = m.abandonResult()
 		return m, tea.Quit
 	case "enter", "s":
-		// A zero-length choice (HH:MM reads 00:00) cancels instead of
-		// persisting an empty break row.
-		if m.breakPlanned.Truncate(time.Minute) <= 0 {
-			m.cancelBreak()
-		} else {
-			m.finishBreak()
+		if !m.breakRunning {
+			// A zero-length choice cancels instead of starting an
+			// empty break row.
+			if m.breakRemain <= 0 {
+				m.cancelBreak()
+			} else {
+				m.startBreak()
+			}
+			return m, nil
 		}
+		m.finishBreak()
 		return m, nil
 	case "esc", "q":
 		m.cancelBreak()
@@ -645,22 +687,35 @@ func (m timerModel) View() string {
 func (m timerModel) viewBreak() string {
 	var b strings.Builder
 
-	b.WriteString(styleTitle.Render("Break") + "\n\n")
+	title := "Break — set length"
+	if m.breakRunning {
+		title = "Break — running"
+	}
+	sub := "session paused · " + m.task
+	b.WriteString(styleTitle.Render(title) + "\n\n")
 	b.WriteString(m.renderBreakClock() + "\n\n")
-	b.WriteString(styleDim.Render("session paused · "+m.task) + "\n\n")
+	b.WriteString(styleDim.Render(sub) + "\n\n")
 
-	footer := styleKey.Render("up/down") + styleFooter.Render(" adjust · ") +
-		styleKey.Render("left/right") + styleFooter.Render(" field · ") +
-		styleKey.Render("enter") + styleFooter.Render(" end break · ") +
-		styleKey.Render("s") + styleFooter.Render(" end early · ") +
-		styleKey.Render("esc") + styleFooter.Render(" cancel")
+	var footer string
+	if m.breakRunning {
+		footer = styleKey.Render("enter") + styleFooter.Render(" end break · ") +
+			styleKey.Render("s") + styleFooter.Render(" end early · ") +
+			styleKey.Render("esc") + styleFooter.Render(" cancel")
+	} else {
+		footer = styleKey.Render("up/down") + styleFooter.Render(" adjust · ") +
+			styleKey.Render("left/right") + styleFooter.Render(" field · ") +
+			styleKey.Render("enter") + styleFooter.Render(" start break · ") +
+			styleKey.Render("s") + styleFooter.Render(" start · ") +
+			styleKey.Render("esc") + styleFooter.Render(" cancel")
+	}
 	b.WriteString(footer)
 
 	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
 }
 
-// renderBreakClock renders the live break countdown as hh:mm:ss with the
-// selected field highlighted. Seconds are display-only, never selectable.
+// renderBreakClock renders the break editor/remaining time as hh:mm:ss. In
+// the frozen editor the selected HH/MM/SS field is highlighted; once running
+// the clock renders plain (editing locked).
 func (m timerModel) renderBreakClock() string {
 	d := m.breakRemain
 	if d < 0 {
@@ -670,13 +725,18 @@ func (m timerModel) renderBreakClock() string {
 	hh := fmt.Sprintf("%02d", total/3600)
 	mm := fmt.Sprintf("%02d", (total%3600)/60)
 	ss := fmt.Sprintf("%02d", total%60)
-	hs, ms := styleTime.Render(hh), styleTime.Render(mm)
-	if m.breakSel == breakFieldHH {
-		hs = styleBreakSel.Render(hh)
-	} else {
-		ms = styleBreakSel.Render(mm)
+	hs, ms, sss := styleTime.Render(hh), styleTime.Render(mm), styleTime.Render(ss)
+	if !m.breakRunning {
+		switch m.breakSel {
+		case breakFieldHH:
+			hs = styleBreakSel.Render(hh)
+		case breakFieldMM:
+			ms = styleBreakSel.Render(mm)
+		default:
+			sss = styleBreakSel.Render(ss)
+		}
 	}
-	return hs + styleTime.Render(":") + ms + styleTime.Render(":") + styleTime.Render(ss)
+	return hs + styleTime.Render(":") + ms + styleTime.Render(":") + sss
 }
 
 func (m timerModel) viewTimer() string {
