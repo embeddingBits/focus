@@ -59,13 +59,14 @@ type BreakInfo struct {
 	EndedAt   time.Time
 }
 
-// breakField is which HH/MM/SS field the break editor steps.
-type breakField int
+// hmsField is which HH/MM/SS field an HH:MM:SS editor steps. Shared by the
+// break editor and the paused work-session adjuster.
+type hmsField int
 
 const (
-	breakFieldHH breakField = iota
-	breakFieldMM
-	breakFieldSS
+	hmsHH hmsField = iota
+	hmsMM
+	hmsSS
 )
 
 // TimerResult is the outcome of one timer run (frozen plan §10 — exact shape).
@@ -129,10 +130,12 @@ type timerModel struct {
 
 	breakRemain  time.Duration // live countdown value, ticks down once started
 	breakPlanned time.Duration // editor-chosen length at start (persisted as planned)
-	breakSel     breakField    // field stepped by up/down
+	breakSel     hmsField      // field stepped by up/down
 	breakStart   time.Time     // break timer start (Taken anchor; zero until started)
 	breakTick    time.Time     // last tick seen (wall-delta anchor)
 	breakRunning bool          // false = editing (frozen), true = countdown running
+
+	adjustSel hmsField // work-remaining field stepped by up/down while paused
 
 	progress progress.Model
 	width    int
@@ -186,6 +189,7 @@ func newTimerModel(req TimerRequest) timerModel {
 		startTime:    time.Now(),
 		progress:     bar,
 		width:        40,
+		adjustSel:    hmsMM,
 		view:         viewTimer,
 		accInput:     acc,
 		nextInput:    next,
@@ -331,8 +335,24 @@ func (m timerModel) onTick() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(tick(), pctCmd)
 }
 
-// updateTimer handles keys in the countdown view.
+// updateTimer handles keys in the countdown view. While paused, up/down
+// step the selected HH/MM/SS field of the remaining time and left/right
+// move between the three fields (stopping at the ends); while running,
+// arrows change nothing.
 func (m timerModel) updateTimer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if dir := arrowKey(msg); dir != "" {
+		m.qArmed = false
+		if !m.paused {
+			return m, nil
+		}
+		// Re-derive planned from the stepped remaining so the frozen
+		// elapsed stays untouched. Left/right return the duration
+		// unchanged (selection move only), so this is exact.
+		stepped, sel := stepHMS(m.remaining(), m.adjustSel, dir)
+		m.adjustSel = sel
+		m.planned = m.elapsed() + stepped
+		return m, nil
+	}
 	switch msg.String() {
 	case "ctrl+c":
 		m.settlePause()
@@ -396,7 +416,7 @@ func (m *timerModel) enterBreak() {
 	now := m.now()
 	m.breakRemain = d
 	m.breakPlanned = d
-	m.breakSel = breakFieldMM
+	m.breakSel = hmsMM
 	m.breakStart = time.Time{}
 	m.breakTick = now
 	m.breakRunning = false
@@ -456,27 +476,44 @@ func clampField(v, lo, hi int) int {
 	return v
 }
 
-// stepBreakField steps the selected HH/MM/SS field by dh hours / dm minutes /
-// ds seconds with Qt section semantics (research §2.2): each field saturates
-// independently — clamp everywhere, no carry, no wrap.
-func (m *timerModel) stepBreakField(dh, dm, ds int) {
-	total := m.breakRemain
-	if total < 0 {
-		total = 0
+// stepHMS applies an arrow key to an HH:MM:SS duration editor with Qt
+// section semantics (research §2.2): up/down step the selected field by
+// 1h/1m/1s with independent saturation (clamp everywhere, no carry, no
+// wrap); left/right move the selection, stopping at the ends. Durations
+// saturate in [00:00:00, 23:59:59]. Shared by the break editor and the
+// paused work-session adjuster.
+func stepHMS(d time.Duration, sel hmsField, dir string) (time.Duration, hmsField) {
+	switch dir {
+	case "left":
+		if sel == hmsSS {
+			return d, hmsMM
+		}
+		return d, hmsHH
+	case "right":
+		if sel == hmsHH {
+			return d, hmsMM
+		}
+		return d, hmsSS
 	}
-	sec := int((total % time.Minute) / time.Second)
-	h := int(total / time.Hour)
-	min := int((total % time.Hour) / time.Minute)
-	switch m.breakSel {
-	case breakFieldHH:
-		h = clampField(h+dh, 0, 23)
-	case breakFieldMM:
-		min = clampField(min+dm, 0, 59)
+	if d < 0 {
+		d = 0
+	}
+	sec := int((d % time.Minute) / time.Second)
+	h := int(d / time.Hour)
+	min := int((d % time.Hour) / time.Minute)
+	delta := 1
+	if dir != "up" {
+		delta = -1
+	}
+	switch sel {
+	case hmsHH:
+		h = clampField(h+delta, 0, 23)
+	case hmsMM:
+		min = clampField(min+delta, 0, 59)
 	default:
-		sec = clampField(sec+ds, 0, 59)
+		sec = clampField(sec+delta, 0, 59)
 	}
-	m.breakRemain = time.Duration(h)*time.Hour + time.Duration(min)*time.Minute + time.Duration(sec)*time.Second
-	m.breakPlanned = m.breakRemain
+	return time.Duration(h)*time.Hour + time.Duration(min)*time.Minute + time.Duration(sec)*time.Second, sel
 }
 
 // arrowKey normalizes arrow input to "up"/"down"/"left"/"right", accepting
@@ -515,38 +552,8 @@ func (m timerModel) updateBreak(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.breakRunning {
 			return m, nil
 		}
-		switch dir {
-		case "up":
-			switch m.breakSel {
-			case breakFieldHH:
-				m.stepBreakField(1, 0, 0)
-			case breakFieldMM:
-				m.stepBreakField(0, 1, 0)
-			default:
-				m.stepBreakField(0, 0, 1)
-			}
-		case "down":
-			switch m.breakSel {
-			case breakFieldHH:
-				m.stepBreakField(-1, 0, 0)
-			case breakFieldMM:
-				m.stepBreakField(0, -1, 0)
-			default:
-				m.stepBreakField(0, 0, -1)
-			}
-		case "left":
-			if m.breakSel == breakFieldSS {
-				m.breakSel = breakFieldMM
-			} else {
-				m.breakSel = breakFieldHH
-			}
-		case "right":
-			if m.breakSel == breakFieldHH {
-				m.breakSel = breakFieldMM
-			} else {
-				m.breakSel = breakFieldSS
-			}
-		}
+		m.breakRemain, m.breakSel = stepHMS(m.breakRemain, m.breakSel, dir)
+		m.breakPlanned = m.breakRemain
 		return m, nil
 	}
 	switch msg.String() {
@@ -739,11 +746,10 @@ func (m timerModel) viewBreak() string {
 	return m.frame(b.String())
 }
 
-// renderBreakClock renders the break editor/remaining time as hh:mm:ss. In
-// the frozen editor the selected HH/MM/SS field is highlighted; once running
-// the clock renders plain (editing locked).
-func (m timerModel) renderBreakClock() string {
-	d := m.breakRemain
+// renderHMS renders d as hh:mm:ss, highlighting the selected HH/MM/SS
+// field when highlight is set. Shared by the break clock and the paused
+// remaining line — the same editor look in both places.
+func renderHMS(d time.Duration, sel hmsField, highlight bool) string {
 	if d < 0 {
 		d = 0
 	}
@@ -752,11 +758,11 @@ func (m timerModel) renderBreakClock() string {
 	mm := fmt.Sprintf("%02d", (total%3600)/60)
 	ss := fmt.Sprintf("%02d", total%60)
 	hs, ms, sss := styleTime.Render(hh), styleTime.Render(mm), styleTime.Render(ss)
-	if !m.breakRunning {
-		switch m.breakSel {
-		case breakFieldHH:
+	if highlight {
+		switch sel {
+		case hmsHH:
 			hs = styleBreakSel.Render(hh)
-		case breakFieldMM:
+		case hmsMM:
 			ms = styleBreakSel.Render(mm)
 		default:
 			sss = styleBreakSel.Render(ss)
@@ -765,13 +771,24 @@ func (m timerModel) renderBreakClock() string {
 	return hs + styleTime.Render(":") + ms + styleTime.Render(":") + sss
 }
 
+// renderBreakClock renders the break editor/remaining time as hh:mm:ss. In
+// the frozen editor the selected HH/MM/SS field is highlighted; once running
+// the clock renders plain (editing locked).
+func (m timerModel) renderBreakClock() string {
+	return renderHMS(m.breakRemain, m.breakSel, !m.breakRunning)
+}
+
 func (m timerModel) viewTimer() string {
 	var b strings.Builder
 
 	b.WriteString(styleTitle.Render(m.task) + "\n\n")
 
 	b.WriteString(styleLabel.Render("Elapsed   ") + styleTime.Render(fmtHMS(m.elapsed())) + "\n")
-	b.WriteString(styleLabel.Render("Remaining ") + styleTime.Render(fmtHMS(m.remaining())) + "\n\n")
+	remaining := styleTime.Render(fmtHMS(m.remaining()))
+	if m.paused {
+		remaining = renderHMS(m.remaining(), m.adjustSel, true)
+	}
+	b.WriteString(styleLabel.Render("Remaining ") + remaining + "\n\n")
 
 	b.WriteString(m.progress.ViewAs(m.progressPct()) + "\n\n")
 
@@ -785,10 +802,20 @@ func (m timerModel) viewTimer() string {
 		b.WriteString(styleBad.Render("Press q again to abandon this session.") + "\n\n")
 	}
 
-	footer := styleKey.Render("p") + styleFooter.Render(" pause/resume · ") +
-		styleKey.Render("s") + styleFooter.Render(" finish · ") +
-		styleKey.Render("q") + styleFooter.Render(" abandon · ") +
-		styleKey.Render("b") + styleFooter.Render(" break")
+	var footer string
+	if m.paused {
+		footer = styleKey.Render("p") + styleFooter.Render(" resume · ") +
+			styleKey.Render("up/down") + styleFooter.Render(" adjust · ") +
+			styleKey.Render("left/right") + styleFooter.Render(" field") + "\n" +
+			styleKey.Render("s") + styleFooter.Render(" finish · ") +
+			styleKey.Render("q") + styleFooter.Render(" abandon · ") +
+			styleKey.Render("b") + styleFooter.Render(" break")
+	} else {
+		footer = styleKey.Render("p") + styleFooter.Render(" pause/resume · ") +
+			styleKey.Render("s") + styleFooter.Render(" finish · ") +
+			styleKey.Render("q") + styleFooter.Render(" abandon · ") +
+			styleKey.Render("b") + styleFooter.Render(" break")
+	}
 	b.WriteString(footer)
 
 	return m.frame(b.String())

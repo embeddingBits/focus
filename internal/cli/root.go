@@ -67,7 +67,8 @@ func newStartCmd() *cobra.Command {
 		Long: `Start a focus session with a full-screen countdown timer.
 
 Keys: p pause/resume · s finish (prompts for accomplishment + next step) ·
-b break · q abandon (kept in history, excluded from stats).`,
+b break · q abandon (kept in history, excluded from stats) ·
+arrows adjust remaining time while paused.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

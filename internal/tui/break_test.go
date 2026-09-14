@@ -46,7 +46,7 @@ func TestBreakEntrySnapshotsFiveMinutesMMSelectedAndPauses(t *testing.T) {
 	if m.breakPlanned != 5*time.Minute {
 		t.Fatalf("breakPlanned = %v, want 5m", m.breakPlanned)
 	}
-	if m.breakSel != breakFieldMM {
+	if m.breakSel != hmsMM {
 		t.Fatalf("breakSel = %v, want MM selected", m.breakSel)
 	}
 	if !m.paused {
@@ -96,7 +96,7 @@ func TestBreakStepsAndFieldMoves(t *testing.T) {
 	}
 
 	m, _ = step(m, keyType(tea.KeyLeft))
-	if m.breakSel != breakFieldHH {
+	if m.breakSel != hmsHH {
 		t.Fatal("left from MM should select HH")
 	}
 	m, _ = step(m, keyType(tea.KeyUp))
@@ -110,23 +110,23 @@ func TestBreakStepsAndFieldMoves(t *testing.T) {
 
 	// Left stops at HH; right walks HH→MM→SS and stops at SS.
 	m, _ = step(m, keyType(tea.KeyLeft))
-	if m.breakSel != breakFieldHH {
+	if m.breakSel != hmsHH {
 		t.Fatal("left at HH should stay on HH")
 	}
 	m, _ = step(m, keyType(tea.KeyRight))
-	if m.breakSel != breakFieldMM {
+	if m.breakSel != hmsMM {
 		t.Fatal("right from HH should select MM")
 	}
 	m, _ = step(m, keyType(tea.KeyRight))
-	if m.breakSel != breakFieldSS {
+	if m.breakSel != hmsSS {
 		t.Fatal("right from MM should select SS")
 	}
 	m, _ = step(m, keyType(tea.KeyRight))
-	if m.breakSel != breakFieldSS {
+	if m.breakSel != hmsSS {
 		t.Fatal("right at SS should stay on SS")
 	}
 	m, _ = step(m, keyType(tea.KeyLeft))
-	if m.breakSel != breakFieldMM {
+	if m.breakSel != hmsMM {
 		t.Fatal("left from SS should select MM")
 	}
 
@@ -157,11 +157,11 @@ func TestBreakArrowStringSpellingAlsoSteps(t *testing.T) {
 		t.Fatalf("rune-spelled down = %v, want 5m", m.breakRemain)
 	}
 	m, _ = step(m, keyRune("left"))
-	if m.breakSel != breakFieldHH {
+	if m.breakSel != hmsHH {
 		t.Fatal("rune-spelled left should select HH")
 	}
 	m, _ = step(m, keyRune("right"))
-	if m.breakSel != breakFieldMM {
+	if m.breakSel != hmsMM {
 		t.Fatal("rune-spelled right should select MM")
 	}
 }
@@ -193,7 +193,7 @@ func TestBreakClampUpCapsNoCarryNoWrap(t *testing.T) {
 	// MM saturates at 59 with no carry into hours.
 	m.breakRemain = time.Hour + 59*time.Minute
 	m.breakPlanned = m.breakRemain
-	m.breakSel = breakFieldMM
+	m.breakSel = hmsMM
 	m, _ = step(m, keyType(tea.KeyUp))
 	if m.breakRemain != time.Hour+59*time.Minute {
 		t.Fatalf("MM up at x:59 = %v, want no carry, stay", m.breakRemain)
@@ -202,7 +202,7 @@ func TestBreakClampUpCapsNoCarryNoWrap(t *testing.T) {
 	// HH saturates at 23.
 	m.breakRemain = 23*time.Hour + 30*time.Minute
 	m.breakPlanned = m.breakRemain
-	m.breakSel = breakFieldHH
+	m.breakSel = hmsHH
 	m, _ = step(m, keyType(tea.KeyUp))
 	if m.breakRemain != 23*time.Hour+30*time.Minute {
 		t.Fatalf("HH up at 23:30 = %v, want stay", m.breakRemain)
@@ -211,7 +211,7 @@ func TestBreakClampUpCapsNoCarryNoWrap(t *testing.T) {
 	// Total caps at 23:59 via MM stepping at the top hour.
 	m.breakRemain = 23*time.Hour + 58*time.Minute
 	m.breakPlanned = m.breakRemain
-	m.breakSel = breakFieldMM
+	m.breakSel = hmsMM
 	m, _ = step(m, keyType(tea.KeyUp))
 	if m.breakRemain != 23*time.Hour+59*time.Minute {
 		t.Fatalf("MM up at 23:58 = %v, want 23:59", m.breakRemain)
@@ -227,13 +227,13 @@ func TestBreakStepPreservesSeconds(t *testing.T) {
 	m, _ = step(m, keyRune("b"))
 	m.breakRemain = 90 * time.Second // 00:01:30 editor value
 	m.breakPlanned = m.breakRemain
-	m.breakSel = breakFieldMM
+	m.breakSel = hmsMM
 	m, _ = step(m, keyType(tea.KeyDown))
 	if m.breakRemain != 30*time.Second {
 		t.Fatalf("MM down from 00:01:30 = %v, want 00:00:30 (seconds preserved)", m.breakRemain)
 	}
 	// SS steps down to zero clamp without going negative.
-	m.breakSel = breakFieldSS
+	m.breakSel = hmsSS
 	for range 30 {
 		m, _ = step(m, keyType(tea.KeyDown))
 	}
@@ -251,7 +251,7 @@ func TestBreakSecondsClampUpNoCarry(t *testing.T) {
 	m, _ = step(m, keyRune("b"))
 	m.breakRemain = 59 * time.Second
 	m.breakPlanned = m.breakRemain
-	m.breakSel = breakFieldSS
+	m.breakSel = hmsSS
 	m, _ = step(m, keyType(tea.KeyUp))
 	if m.breakRemain != 59*time.Second {
 		t.Fatalf("SS up at 59s = %v, want cap stay, no carry", m.breakRemain)
@@ -468,7 +468,7 @@ func TestBreakBDoesNothing(t *testing.T) {
 	m, _ = step(m, tickMsg(fc.now))
 	before := m.breakRemain
 	m, _ = step(m, keyRune("b"))
-	if m.breakRemain != before || m.breakSel != breakFieldMM || m.view != viewBreak {
+	if m.breakRemain != before || m.breakSel != hmsMM || m.view != viewBreak {
 		t.Fatal("b during break must not re-snapshot or leave the view")
 	}
 	m, _ = step(m, keyType(tea.KeyEnter)) // start
