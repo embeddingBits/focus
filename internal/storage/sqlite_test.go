@@ -31,12 +31,12 @@ func TestMigrateIdempotent(t *testing.T) {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("second Migrate: %v", err)
 	}
-	var version int
-	if err := s.db.QueryRowContext(ctx, `SELECT version FROM schema_migrations`).Scan(&version); err != nil {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatalf("read schema_migrations: %v", err)
 	}
-	if version != 1 {
-		t.Fatalf("schema version = %d, want 1", version)
+	if count != 2 {
+		t.Fatalf("applied migrations = %d, want 2", count)
 	}
 }
 

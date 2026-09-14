@@ -42,9 +42,8 @@ func runPomodoro(ctx context.Context, store focus.Store, out io.Writer, task str
 				return done, err
 			}
 			res, err := run(ctx, tui.TimerRequest{
-				Task:       task,
-				Planned:    cycle.PhaseDuration(),
-				PhaseLabel: cycle.PhaseLabel(),
+				Task:    task,
+				Planned: cycle.PhaseDuration(),
 			})
 			if err != nil {
 				return done, err
@@ -63,11 +62,10 @@ func runPomodoro(ctx context.Context, store focus.Store, out io.Writer, task str
 				return done, nil
 			}
 		default: // short or long break: never persisted
+			phaseLabel := cycle.PhaseLabel()
 			res, err := run(ctx, tui.TimerRequest{
-				Task:       task,
-				Planned:    cycle.PhaseDuration(),
-				PhaseLabel: cycle.PhaseLabel(),
-				Break:      true,
+				Task:    phaseLabel,
+				Planned: cycle.PhaseDuration(),
 			})
 			if err != nil {
 				return done, err
@@ -143,7 +141,7 @@ q abandon work block / quit rotation (double-press).`,
 				if !headless {
 					return tui.RunTimer(req)
 				}
-				fmt.Fprintf(out, "=== %s (%s) ===\n", req.PhaseLabel, compactDur(req.Planned))
+				fmt.Fprintf(out, "=== %s (%s) ===\n", req.Task, compactDur(req.Planned))
 				if err := countdown(ctx, out, req.Planned); err != nil {
 					return tui.TimerResult{}, err
 				}

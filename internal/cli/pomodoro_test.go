@@ -120,17 +120,17 @@ func TestRunPomodoroPersistsWorkBlocks(t *testing.T) {
 	if len(runner.seen) != 3 {
 		t.Fatalf("timer runs = %d, want 3 (work, break, work)", len(runner.seen))
 	}
-	if runner.seen[0].PhaseLabel != "Work 1 of 4" || runner.seen[0].Break {
-		t.Fatalf("run 0 = %+v, want work label, not break", runner.seen[0])
+	if runner.seen[0].Task != "write report" {
+		t.Fatalf("run 0 = %+v, want work task", runner.seen[0])
 	}
-	if runner.seen[1].PhaseLabel != "Short break" || !runner.seen[1].Break {
-		t.Fatalf("run 1 = %+v, want skippable short break", runner.seen[1])
+	if runner.seen[1].Task != "Short break" {
+		t.Fatalf("run 1 = %+v, want short break task", runner.seen[1])
 	}
 	if runner.seen[1].Planned != 5*time.Minute {
 		t.Fatalf("break planned = %v, want 5m", runner.seen[1].Planned)
 	}
-	if runner.seen[2].PhaseLabel != "Work 2 of 4" || runner.seen[2].Break {
-		t.Fatalf("run 2 = %+v, want work 2 of 4", runner.seen[2])
+	if runner.seen[2].Task != "write report" {
+		t.Fatalf("run 2 = %+v, want work task", runner.seen[2])
 	}
 }
 
@@ -147,22 +147,19 @@ func TestRunPomodoroLongBreakCadence(t *testing.T) {
 	if done != 3 {
 		t.Fatalf("done = %d, want 3", done)
 	}
-	want := []struct {
-		label string
-		isBrk bool
-	}{
-		{"Work 1 of 2", false},
-		{"Short break", true},
-		{"Work 2 of 2", false},
-		{"Long break", true},
-		{"Work 1 of 2", false},
+	want := []string{
+		"task",
+		"Short break",
+		"task",
+		"Long break",
+		"task",
 	}
 	if len(runner.seen) != len(want) {
 		t.Fatalf("timer runs = %d, want %d", len(runner.seen), len(want))
 	}
 	for i, w := range want {
-		if runner.seen[i].PhaseLabel != w.label || runner.seen[i].Break != w.isBrk {
-			t.Fatalf("run %d = %+v, want label %q break=%v", i, runner.seen[i], w.label, w.isBrk)
+		if runner.seen[i].Task != w {
+			t.Fatalf("run %d = %+v, want task %q", i, runner.seen[i], w)
 		}
 	}
 	if runner.seen[3].Planned != 15*time.Minute {

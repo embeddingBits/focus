@@ -68,7 +68,8 @@ func parseNullableTime(raw sql.NullString) (*time.Time, error) {
 	return &t, nil
 }
 
-// Create inserts a new session row and returns its id.
+// Create inserts a new session row and returns its id. An empty Kind
+// normalizes to focus.KindFocus so pre-contract callers stay valid.
 func (s *SQLiteStore) Create(ctx context.Context, r focus.SessionRecord) (int64, error) {
 	var ended sql.NullString
 	if r.EndedAt != nil {
@@ -78,10 +79,14 @@ func (s *SQLiteStore) Create(ctx context.Context, r focus.SessionRecord) (int64,
 	if r.Completed {
 		completed = 1
 	}
+	kind := r.Kind
+	if kind == "" {
+		kind = focus.KindFocus
+	}
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO sessions (task, planned_seconds, started_at, ended_at, paused_seconds, accomplishment, next, completed)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.Task, r.PlannedSeconds, formatTime(r.StartedAt), ended, r.PausedSeconds,
+		INSERT INTO sessions (task, kind, planned_seconds, started_at, ended_at, paused_seconds, accomplishment, next, completed)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Task, kind, r.PlannedSeconds, formatTime(r.StartedAt), ended, r.PausedSeconds,
 		r.Accomplishment, r.Next, completed,
 	)
 	if err != nil {
@@ -119,7 +124,7 @@ func (s *SQLiteStore) Complete(ctx context.Context, id int64, endedAt time.Time,
 	return nil
 }
 
-const sessionColumns = `id, task, planned_seconds, started_at, ended_at, paused_seconds, accomplishment, next, completed`
+const sessionColumns = `id, task, kind, planned_seconds, started_at, ended_at, paused_seconds, accomplishment, next, completed`
 
 func scanRecord(row interface {
 	Scan(dest ...any) error
@@ -128,7 +133,7 @@ func scanRecord(row interface {
 	var startedRaw string
 	var endedRaw sql.NullString
 	var completedInt int
-	if err := row.Scan(&r.ID, &r.Task, &r.PlannedSeconds, &startedRaw, &endedRaw,
+	if err := row.Scan(&r.ID, &r.Task, &r.Kind, &r.PlannedSeconds, &startedRaw, &endedRaw,
 		&r.PausedSeconds, &r.Accomplishment, &r.Next, &completedInt); err != nil {
 		return focus.SessionRecord{}, err
 	}
@@ -182,14 +187,14 @@ func dayBounds(now time.Time) (start, end time.Time) {
 }
 
 // StatsToday returns today's (local-day) total focused time, completed session
-// count, and average. Only completed sessions count; abandoned rows are
-// excluded. Elapsed per session is wall-clock (ended−started)−paused — honest
-// numbers, not planned.
+// count, and average. Only completed focus sessions count; abandoned rows and
+// breaks are excluded (breaks stay visible in history via List). Elapsed per
+// session is wall-clock (ended−started)−paused — honest numbers, not planned.
 func (s *SQLiteStore) StatsToday(ctx context.Context, now time.Time) (total time.Duration, count int, avg time.Duration, err error) {
 	dayStart, dayEnd := dayBounds(now)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT started_at, ended_at, paused_seconds FROM sessions
-		WHERE completed = 1 AND started_at >= ? AND started_at < ?`,
+		WHERE completed = 1 AND kind = 'focus' AND started_at >= ? AND started_at < ?`,
 		formatTime(dayStart), formatTime(dayEnd),
 	)
 	if err != nil {

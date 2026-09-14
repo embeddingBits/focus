@@ -66,6 +66,29 @@ func TestRenderHistoryGolden(t *testing.T) {
 	}
 }
 
+func TestRenderHistoryBreakRowDistinct(t *testing.T) {
+	br := focus.SessionRecord{
+		ID:             4,
+		Task:           "write report",
+		Kind:           focus.KindBreak,
+		PlannedSeconds: 300,
+		StartedAt:      time.Date(2026, 9, 13, 14, 30, 0, 0, time.UTC),
+		EndedAt:        timePtr(time.Date(2026, 9, 13, 14, 35, 0, 0, time.UTC)),
+		Completed:      true,
+	}
+	got := RenderHistory([]focus.SessionRecord{br}, 10)
+
+	want := "History\n" +
+		"2026-09-13 14:30  write report  5m → 5m  break\n"
+
+	if got != want {
+		t.Fatalf("break RenderHistory mismatch.\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	if strings.Contains(got, "abandoned") {
+		t.Fatalf("break row must not render as abandoned:\n%s", got)
+	}
+}
+
 func TestRenderHistoryLimit(t *testing.T) {
 	done1, done2, abandoned := fixtureRecords()
 	got := RenderHistory([]focus.SessionRecord{done1, done2, abandoned}, 1)

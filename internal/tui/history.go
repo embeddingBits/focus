@@ -56,7 +56,12 @@ func formatSessionLine(r focus.SessionRecord) string {
 	}
 
 	mark := styleBad.Render("abandoned")
-	if r.Completed {
+	if r.Kind == focus.KindBreak {
+		// Break rows are rest, not abandoned work: distinct mark, and no
+		// accomplishment/next lines (breaks carry none). "" (pre-migration
+		// rows) falls through to the focus rendering below.
+		mark = styleLabel.Render("break")
+	} else if r.Completed {
 		mark = styleOK.Render("completed")
 	}
 

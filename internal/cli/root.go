@@ -67,7 +67,7 @@ func newStartCmd() *cobra.Command {
 		Long: `Start a focus session with a full-screen countdown timer.
 
 Keys: p pause/resume · s finish (prompts for accomplishment + next step) ·
-q abandon (kept in history, excluded from stats).`,
+b break · q abandon (kept in history, excluded from stats).`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -101,7 +101,12 @@ q abandon (kept in history, excluded from stats).`,
 			if noTUI || !isTTY() {
 				res, err = runHeadless(cmd, planned)
 			} else {
-				res, err = tui.RunTimer(tui.TimerRequest{Task: task, Planned: planned})
+				res, err = tui.RunTimer(tui.TimerRequest{
+					Task:         task,
+					Planned:      planned,
+					BreakDefault: breakDefaultFromEnv(),
+					OnBreak:      breakPersistHook(ctx, store, task),
+				})
 			}
 			if err != nil {
 				return err
@@ -176,9 +181,13 @@ func newStatsCmd() *cobra.Command {
 			}
 			y, m, d := now.Date()
 			dayStart := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+			// Per-session lines for today: completed focus rows only. Totals
+			// already exclude breaks (StatsToday counts kind='focus'); this
+			// keeps the lines consistent. (Workstream A cannot touch the CLI
+			// per its scope, so the guard lives here with the wiring.)
 			var today []focus.SessionRecord
 			for _, r := range recent {
-				if r.Completed && !r.StartedAt.Before(dayStart) && r.StartedAt.Before(dayStart.Add(24*time.Hour)) {
+				if r.Completed && r.Kind != focus.KindBreak && !r.StartedAt.Before(dayStart) && r.StartedAt.Before(dayStart.Add(24*time.Hour)) {
 					today = append(today, r)
 				}
 			}
@@ -231,6 +240,46 @@ func countdown(ctx context.Context, out interface {
 	}
 	fmt.Fprintln(out)
 	return nil
+}
+
+// breakDefaultFromEnv reads FOCUS_BREAK_SECONDS (a trial hook): a positive
+// integer overrides the 5-minute break default with that many seconds.
+// Empty or garbage → 0, and the TUI falls back to DefaultBreak.
+func breakDefaultFromEnv() time.Duration {
+	raw := os.Getenv("FOCUS_BREAK_SECONDS")
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
+}
+
+// breakPersistHook returns the TUI OnBreak callback: each ended break is
+// persisted immediately as a completed Kind='break' row (visible in history,
+// excluded from stats), so the row survives even if the session is later
+// abandoned. A persist failure is reported on stderr without killing the
+// session — the work timer is the authority, the break row is a record.
+func breakPersistHook(ctx context.Context, store *storage.SQLiteStore, task string) func(tui.BreakInfo) {
+	return func(b tui.BreakInfo) {
+		ended := b.EndedAt
+		if ended.IsZero() {
+			ended = time.Now()
+		}
+		_, err := store.Create(ctx, focus.SessionRecord{
+			Task:           task,
+			Kind:           focus.KindBreak,
+			PlannedSeconds: int64(b.Planned / time.Second),
+			StartedAt:      b.StartedAt,
+			EndedAt:        &ended,
+			Completed:      true,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "focus: could not persist break row: %v\n", err)
+		}
+	}
 }
 
 // ExitCode maps an Execute error to the process exit code: 0 ok, 2 usage, 1 runtime.

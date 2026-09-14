@@ -24,6 +24,22 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Manual check: `FOCUS_DATA_DIR=$(mktemp -d) go run ./cmd/focus start "quick" 1`
   (non-TTY runs a headless countdown; exit codes 0 ok / 2 usage / 1 runtime).
 
+## focus break mode (plain `start` sessions)
+
+- Break editor lives in `internal/tui/timer.go` (`viewBreak`): `b` during a
+  `focus start` session opens a fresh 5-minute break (adjustable hh:mm:ss,
+  up/down step selected HH/MM field, left/right move between fields, clamp
+  no-wrap, seconds pinned :00). Enter/`s` starts the break; `esc`/`q`
+  cancels. Work session auto-pauses underneath; break wall time folds into
+  `pausedTotal` on return.
+- Persistence: `internal/cli/root.go` `breakPersistHook` writes
+  `Kind='break'` rows via `SessionRecord.Kind` (`internal/focus/store.go`).
+  `StatsToday` excludes breaks (`kind='focus'` only); `history` shows a
+  `break` mark. `FOCUS_BREAK_SECONDS` overrides the 5-minute default.
+- Pomodoro breaks do NOT use the break editor; they run as regular timer
+  sessions with the phase label as the task (no `PhaseLabel`/`Break` fields
+  in `TimerRequest` since the break join).
+
 ## focus pomodoro
 
 - Rotation model: `internal/focus/pomodoro.go` (`PomodoroCycle`, clock-injected
@@ -31,9 +47,8 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   `FOCUS_POMODORO_BLOCKS_BEFORE_LONG`, classic 25m/5m/15m/4); command in
   `internal/cli/pomodoro.go` (`focus pomodoro "<task>" [--blocks N,
   --work/--short-break/--long-break/--every, --no-tui]`).
-- Breaks reuse the timer TUI in break mode (`TimerRequest.Break`, skippable
-  with `s`, never persisted); each work block completes as a normal session
-  row, so history/stats need no changes.
+- Each work block completes as a normal session row, so history/stats need
+  no changes.
 - Quick rotation trial: 1-minute env overrides + `--blocks 3 --no-tui`
   (work→short→work→long→work, ~5 min), then `history`/`stats` on the same
   `FOCUS_DATA_DIR`.

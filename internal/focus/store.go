@@ -9,10 +9,20 @@ import (
 	"time"
 )
 
+// Session kind values — the shared break-mode contract (workstream A owns
+// persistence, workstream B owns the break TUI). A break records a visible
+// history row with Kind == KindBreak while StatsToday counts only KindFocus
+// rows, so breaks stay out of daily totals.
+const (
+	KindFocus = "focus"
+	KindBreak = "break"
+)
+
 // SessionRecord is the persistence DTO — what storage reads/writes.
 type SessionRecord struct {
 	ID             int64
 	Task           string
+	Kind           string // KindFocus default, KindBreak for breaks; "" normalizes to KindFocus on Create
 	PlannedSeconds int64
 	StartedAt      time.Time  // UTC
 	EndedAt        *time.Time // UTC, nil while running (Phase 1: only completed rows read back)

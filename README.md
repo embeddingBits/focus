@@ -42,6 +42,10 @@ While the full-screen timer runs:
 
 - `p` — pause / resume (paused time is held, not counted)
 - `s` — finish; prompts for an accomplishment and a next step
+- `b` — take a break: opens a 5-minute break editor (up/down step the
+  selected HH/MM field, left/right move between fields, enter/`s` start the
+  break, `esc`/`q` cancel). The work session stays paused while the break
+  counts down. Breaks are saved in history and excluded from stats.
 - `q` — abandon; press `q` twice to confirm (the partial session is kept in
   history but excluded from stats)
 
@@ -94,6 +98,8 @@ environment overrides:
   trials)
 - `FOCUS_DEFAULT_MINUTES` — default session length when minutes are omitted
   (positive integer, default `25`)
+- `FOCUS_BREAK_SECONDS` — override the break default length (positive
+  integer seconds, default `300` = 5 minutes); useful for quick trials
 - `FOCUS_POMODORO_WORK_MINUTES`, `FOCUS_POMODORO_SHORT_BREAK_MINUTES`,
   `FOCUS_POMODORO_LONG_BREAK_MINUTES`, `FOCUS_POMODORO_BLOCKS_BEFORE_LONG` —
   pomodoro rotation (positive integers, defaults `25` / `5` / `15` / `4`);
