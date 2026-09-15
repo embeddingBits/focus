@@ -36,7 +36,7 @@ const frameChromeH = 8
 // minBarWidth keeps the progress bar usable on narrow terminals.
 const minBarWidth = 20
 
-// TimerRequest configures one timer run (frozen plan §10 — exact shape).
+// TimerRequest configures one timer run (frozen plan §10, exact shape).
 type TimerRequest struct {
 	Task    string
 	Planned time.Duration
@@ -69,7 +69,7 @@ const (
 	hmsSS
 )
 
-// TimerResult is the outcome of one timer run (frozen plan §10 — exact shape).
+// TimerResult is the outcome of one timer run (frozen plan §10, exact shape).
 type TimerResult struct {
 	Completed      bool
 	Accomplishment string
@@ -402,8 +402,8 @@ func (m *timerModel) settlePause() {
 }
 
 // enterBreak snapshots a fresh break (DefaultBreak unless BreakDefault
-// overrides), selects the minutes field, and auto-pauses the work session —
-// reusing the paused math untouched, so elapsed/remaining freeze exactly as
+// overrides), selects the minutes field, and auto-pauses the work session.
+// It reuses the paused math untouched, so elapsed/remaining freeze exactly as
 // if p had been pressed. The break countdown stays frozen in the editor
 // until enter/s starts it (breakRunning=false). Any pending q-arm is
 // cleared: the break is a transient editor, and abandoning it must never be
@@ -441,7 +441,7 @@ func (m *timerModel) startBreak() {
 
 // finishBreak ends the break (expiry, enter, or s): resumes work with the
 // whole break wall interval folded into pausedTotal, and reports the break
-// for persistence — unless it was zero-length (planned or taken empty),
+// for persistence, unless it was zero-length (planned or taken empty),
 // which persists nothing.
 func (m *timerModel) finishBreak() {
 	now := m.now()
@@ -639,7 +639,7 @@ func (m timerModel) updatePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// Shared look and feel (also used by history.go / stats.go — same package).
+// Shared look and feel, also used by history.go and stats.go in this package.
 var (
 	styleTitle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	styleDim      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
@@ -748,7 +748,7 @@ func (m timerModel) viewBreak() string {
 
 // renderHMS renders d as hh:mm:ss, highlighting the selected HH/MM/SS
 // field when highlight is set. Shared by the break clock and the paused
-// remaining line — the same editor look in both places.
+// remaining line. Both share one editor look.
 func renderHMS(d time.Duration, sel hmsField, highlight bool) string {
 	if d < 0 {
 		d = 0

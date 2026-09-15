@@ -1,6 +1,6 @@
-// Package focus — persistence port (frozen plan §6, workstream A owns).
+// Package focus is the persistence port (frozen plan §6, workstream A owns).
 //
-// SessionRecord is the persistence DTO — what storage reads/writes.
+// SessionRecord is the persistence DTO. It is what storage reads and writes.
 // Store is the interface storage.SQLiteStore implements and the CLI consumes.
 package focus
 
@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Session kind values — the shared break-mode contract (workstream A owns
+// Session kind values for the shared break-mode contract (workstream A owns
 // persistence, workstream B owns the break TUI). A break records a visible
 // history row with Kind == KindBreak while StatsToday counts only KindFocus
 // rows, so breaks stay out of daily totals.
@@ -18,7 +18,7 @@ const (
 	KindBreak = "break"
 )
 
-// SessionRecord is the persistence DTO — what storage reads/writes.
+// SessionRecord is the persistence DTO. It is what storage writes and reads back.
 type SessionRecord struct {
 	ID             int64
 	Task           string

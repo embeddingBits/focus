@@ -17,7 +17,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   (`SessionRecord` + `Store`), `internal/tui` §10 API (`RunTimer`,
   `RenderHistory`, `RenderStats`). See plan §§5-8 in firstmate data dir.
 - File ownership: A owns everything except `internal/tui/*`; B owns
-  `internal/tui/*` (currently temporary stubs in `internal/tui/stub.go` —
+  `internal/tui/*` (currently temporary stubs in `internal/tui/stub.go`,
   delete at integration). Neither stream changes the contract unilaterally.
 - DB: `$XDG_DATA_HOME/focus/focus.db` (`FOCUS_DATA_DIR` override), UTC
   RFC3339 timestamps, `StatsToday` uses Go-computed local-midnight bounds.
@@ -62,7 +62,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   command in `internal/cli/heatmap.go` (`focus heatmap [--days N]`,
   default 30). Breaks/abandoned excluded like stats; GitHub-style single
   □/■ cells on a wide pitch, 4 green shades by quartile of the hottest
-  slot. Additive only — frozen Store/TUI contract untouched.
+  slot. Additive only. The frozen Store/TUI contract is untouched.
 
 ## Maintaining this file
 

@@ -262,7 +262,7 @@ func breakDefaultFromEnv() time.Duration {
 // persisted immediately as a completed Kind='break' row (visible in history,
 // excluded from stats), so the row survives even if the session is later
 // abandoned. A persist failure is reported on stderr without killing the
-// session — the work timer is the authority, the break row is a record.
+// session. The work timer is the authority, the break row is a record.
 func breakPersistHook(ctx context.Context, store *storage.SQLiteStore, task string) func(tui.BreakInfo) {
 	return func(b tui.BreakInfo) {
 		ended := b.EndedAt

@@ -76,13 +76,13 @@ func TestBuildProductivityGridBuckets(t *testing.T) {
 		t.Fatalf("Tue 10 = %v, want 20m", g.Cells[1][10])
 	}
 	if g.Cells[0][11] != 20*time.Minute {
-		t.Fatalf("Mon 11 = %v, want 20m honest (30 wall − 10 paused)", g.Cells[0][11])
+		t.Fatalf("Mon 11 = %v, want 20m honest (30 wall minus 10 paused)", g.Cells[0][11])
 	}
 	if g.Total != 80*time.Minute {
 		t.Fatalf("Total = %v, want 80m", g.Total)
 	}
 	if g.MinHour != 8 || g.MaxHour != 11 {
-		t.Fatalf("hour range = %d–%d, want 8–11", g.MinHour, g.MaxHour)
+		t.Fatalf("hour range = %d to %d, want 8 to 11", g.MinHour, g.MaxHour)
 	}
 	if g.PeakWD != 0 || g.PeakHour != 8 || g.Peak != 30*time.Minute {
 		t.Fatalf("Peak = %s %d:00 %v, want Mon 8:00 30m", weekdayNames[g.PeakWD], g.PeakHour, g.Peak)

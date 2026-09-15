@@ -18,8 +18,8 @@ type SQLiteStore struct {
 	db *sql.DB
 }
 
-// Open opens (creating parent dirs as needed is the caller's job — see
-// config.Load) the database at dbPath and returns a store. The caller must
+// Open opens the database at dbPath and returns a store. Creating parent
+// dirs as needed is the caller's job (see config.Load). The caller must
 // call Migrate before use and Close when done.
 func Open(dbPath string) (*SQLiteStore, error) {
 	dsn := "file:" + dbPath + "?cache=shared"
@@ -189,7 +189,7 @@ func dayBounds(now time.Time) (start, end time.Time) {
 // StatsToday returns today's (local-day) total focused time, completed session
 // count, and average. Only completed focus sessions count; abandoned rows and
 // breaks are excluded (breaks stay visible in history via List). Elapsed per
-// session is wall-clock (ended−started)−paused — honest numbers, not planned.
+// session is wall-clock (ended-started) minus paused. Honest numbers, not planned.
 func (s *SQLiteStore) StatsToday(ctx context.Context, now time.Time) (total time.Duration, count int, avg time.Duration, err error) {
 	dayStart, dayEnd := dayBounds(now)
 	rows, err := s.db.QueryContext(ctx, `

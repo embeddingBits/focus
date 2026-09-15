@@ -2,7 +2,7 @@
 
 `focus` is a terminal focus timer: start a countdown on a task, pause when
 interrupted, then record what you accomplished and what comes next. Phase 1
-scope is a single Linux-first Go binary with local SQLite storage — one
+scope is a single Linux-first Go binary with local SQLite storage: one
 full-screen countdown (`start`), past-session listing (`history`), and
 today's totals (`stats`). No servers, no accounts, no network.
 
@@ -43,13 +43,13 @@ focus heatmap
 
 While the full-screen timer runs:
 
-- `p` — pause / resume (paused time is held, not counted)
-- `s` — finish; prompts for an accomplishment and a next step
-- `b` — take a break: opens a 5-minute break editor (up/down step the
+- `p`: pause/resume. Paused time is held, not counted.
+- `s`: finish. Prompts for an accomplishment and a next step.
+- `b`: take a break. Opens a 5-minute break editor (up/down step the
   selected HH/MM field, left/right move between fields, enter/`s` start the
   break, `esc`/`q` cancel). The work session stays paused while the break
   counts down. Breaks are saved in history and excluded from stats.
-- `q` — abandon; press `q` twice to confirm (the partial session is kept in
+- `q`: abandon. Press `q` twice to confirm (the partial session is kept in
   history but excluded from stats)
 
 Piped or redirected output (and `--no-tui`) runs a plain headless countdown
@@ -75,7 +75,7 @@ and `stats` keep working. Breaks are rest time: nothing is saved, and `s`
 skips to the next work block. Abandoning a work block (`q` twice) or
 quitting a break (`q` twice) ends the rotation.
 
-Durations default to the classics and are configurable two ways — flags win
+Durations default to the classics and are configurable two ways. Flags win
 over environment:
 
 ```sh
@@ -97,14 +97,14 @@ Sessions live in SQLite at `~/.local/share/focus/focus.db`
 (`$XDG_DATA_HOME/focus/focus.db` when `XDG_DATA_HOME` is set). Two
 environment overrides:
 
-- `FOCUS_DATA_DIR` — use a different data directory (e.g. a scratch dir for
+- `FOCUS_DATA_DIR`: use a different data directory (e.g. a scratch dir for
   trials)
-- `FOCUS_DEFAULT_MINUTES` — default session length when minutes are omitted
+- `FOCUS_DEFAULT_MINUTES`: default session length when minutes are omitted
   (positive integer, default `25`)
-- `FOCUS_BREAK_SECONDS` — override the break default length (positive
+- `FOCUS_BREAK_SECONDS`: override the break default length (positive
   integer seconds, default `300` = 5 minutes); useful for quick trials
 - `FOCUS_POMODORO_WORK_MINUTES`, `FOCUS_POMODORO_SHORT_BREAK_MINUTES`,
-  `FOCUS_POMODORO_LONG_BREAK_MINUTES`, `FOCUS_POMODORO_BLOCKS_BEFORE_LONG` —
+  `FOCUS_POMODORO_LONG_BREAK_MINUTES`, `FOCUS_POMODORO_BLOCKS_BEFORE_LONG`:
   pomodoro rotation (positive integers, defaults `25` / `5` / `15` / `4`);
   the matching `pomodoro` flags (`--work`, `--short-break`, `--long-break`,
   `--every`) win over these when passed
@@ -118,13 +118,13 @@ environment overrides:
 
 ## Repo layout
 
-- `cmd/focus` — thin entry point; commands wire up in `internal/cli`.
-- `internal/cli` — cobra command parsing (`start`, `history`, `stats`, `heatmap`) and
+- `cmd/focus`: thin entry point. Commands wire up in `internal/cli`.
+- `internal/cli`: cobra command parsing (`start`, `history`, `stats`, `heatmap`) and
   exit-code mapping.
-- `internal/focus` — session state machine (engine owns pause math).
-- `internal/storage` — SQLite store, schema migrations, today's-stats query.
-- `internal/config` — data-dir resolution and env overrides.
-- `internal/tui` — Bubble Tea countdown timer plus history/stats/heatmap renders.
+- `internal/focus`: session state machine. The engine owns pause math.
+- `internal/storage`: SQLite store, schema migrations, today's-stats query.
+- `internal/config`: data-dir resolution and env overrides.
+- `internal/tui`: Bubble Tea countdown timer plus history/stats/heatmap renders.
 
 ## Development
 

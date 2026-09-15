@@ -8,7 +8,7 @@ import (
 )
 
 // RenderHistory renders past sessions newest-first as plain styled text
-// (frozen plan §10 — exact signature). No TTY needed; used by `focus history`.
+// (frozen plan §10, exact signature). No TTY needed. Used by `focus history`.
 func RenderHistory(records []focus.SessionRecord, limit int) string {
 	var b strings.Builder
 

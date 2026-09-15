@@ -12,7 +12,7 @@ import (
 //
 // While paused, up/down step the selected HH/MM/SS field of the remaining
 // time (MM selected by default) and left/right move between the three
-// fields — the same Qt section semantics as the break editor (clamp,
+// fields, with the same Qt section semantics as the break editor (clamp,
 // no carry, no wrap). While running, arrows change nothing.
 
 func TestWorkAdjustArrowsIgnoredWhileRunning(t *testing.T) {

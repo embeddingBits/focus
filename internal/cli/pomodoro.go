@@ -1,4 +1,4 @@
-// Package cli — `focus pomodoro`: a repeating work/break rotation on top of
+// Package cli holds `focus pomodoro`: a repeating work/break rotation on top of
 // the Phase 1 timer. Each work block runs the full-screen timer (or a
 // headless countdown) and persists as a normal session row, so history and
 // stats keep working untouched; breaks are never persisted and are

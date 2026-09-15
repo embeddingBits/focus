@@ -136,8 +136,8 @@ func splitSession(g *ProductivityGrid, r focus.SessionRecord, loc *time.Location
 	}
 }
 
-// heatLevel maps a cell to a GitHub-style intensity level 0–4 relative to
-// the hottest cell: 0 empty, 1–4 ascending quartiles of green.
+// heatLevel maps a cell to a GitHub-style intensity level 0 to 4 relative to
+// the hottest cell: 0 empty, 1 to 4 ascending quartiles of green.
 func heatLevel(v, max time.Duration) int {
 	if v <= 0 || max <= 0 {
 		return 0

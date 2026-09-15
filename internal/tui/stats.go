@@ -9,7 +9,7 @@ import (
 )
 
 // RenderStats renders today's totals plus per-session lines as plain styled
-// text (frozen plan §10 — exact signature). totals come from the store's
+// text (frozen plan §10, exact signature). Totals come from the store's
 // StatsToday; records back the per-session lines. No TTY needed.
 func RenderStats(total time.Duration, count int, avg time.Duration, records []focus.SessionRecord) string {
 	var b strings.Builder

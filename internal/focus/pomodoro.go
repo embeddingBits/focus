@@ -1,10 +1,10 @@
-// Package focus — pomodoro cycle model.
+// Package focus holds the pomodoro cycle model.
 //
 // PomodoroCycle is the work/break rotation on top of the Phase 1 timer:
 // repeating work blocks with short breaks and a long break after every
 // BlocksBeforeLong work blocks. Like Session it is pure (no I/O) and
 // clock-injected; the CLI drives one phase per timer run and calls Advance
-// when the phase ends. Breaks are never persisted — each work block
+// when the phase ends. Breaks are never persisted. Each work block
 // completes as a normal session row via the Store port.
 package focus
 
