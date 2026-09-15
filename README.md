@@ -36,6 +36,9 @@ focus history --limit 5
 
 # Today's total focused time, session count, and average
 focus stats
+
+# 7-day activity heatmap (rolling window incl. today)
+focus heatmap
 ```
 
 While the full-screen timer runs:
@@ -116,12 +119,12 @@ environment overrides:
 ## Repo layout
 
 - `cmd/focus` — thin entry point; commands wire up in `internal/cli`.
-- `internal/cli` — cobra command parsing (`start`, `history`, `stats`) and
+- `internal/cli` — cobra command parsing (`start`, `history`, `stats`, `heatmap`) and
   exit-code mapping.
 - `internal/focus` — session state machine (engine owns pause math).
 - `internal/storage` — SQLite store, schema migrations, today's-stats query.
 - `internal/config` — data-dir resolution and env overrides.
-- `internal/tui` — Bubble Tea countdown timer plus history/stats renders.
+- `internal/tui` — Bubble Tea countdown timer plus history/stats/heatmap renders.
 
 ## Development
 
