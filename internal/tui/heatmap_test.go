@@ -8,111 +8,152 @@ import (
 	"github.com/focus-cli/focus/internal/focus"
 )
 
-func heatFixture(now time.Time) []focus.SessionRecord {
+// mondayNoon anchors fixtures to a known Monday (2026-09-14) in UTC.
+func mondayNoon() time.Time {
+	return time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+}
+
+func gridFixture() []focus.SessionRecord {
 	end := func(t time.Time) *time.Time { return &t }
+	mon := mondayNoon()
+	tue := mon.AddDate(0, 0, 1)
 	return []focus.SessionRecord{
 		{
 			ID: 1, Task: "deep work", PlannedSeconds: 1500,
-			StartedAt: now.Add(-2 * time.Hour), EndedAt: end(now.Add(-90 * time.Minute)),
+			StartedAt: time.Date(2026, 9, 14, 8, 10, 0, 0, time.UTC),
+			EndedAt:   end(time.Date(2026, 9, 14, 8, 40, 0, 0, time.UTC)),
 			Completed: true,
 		},
 		{
-			ID: 2, Task: "review", PlannedSeconds: 1500,
-			StartedAt: now.Add(-50 * time.Hour), EndedAt: end(now.Add(-50*time.Hour + 10*time.Minute)),
+			// Spans the 09:00 boundary: 10m land in 09, 20m in 10 (Tuesday).
+			ID: 2, Task: "review", PlannedSeconds: 1800,
+			StartedAt: time.Date(2026, 9, 15, 9, 50, 0, 0, time.UTC),
+			EndedAt:   end(time.Date(2026, 9, 15, 10, 20, 0, 0, time.UTC)),
 			Completed: true,
 		},
 		{
-			ID: 3, Task: "abandoned", PlannedSeconds: 1500,
-			StartedAt: now, EndedAt: end(now.Add(5 * time.Minute)),
+			// Paused 10 of 30 wall minutes: 20m honest, all Monday 11.
+			ID: 3, Task: "write", PlannedSeconds: 1800,
+			StartedAt:     time.Date(2026, 9, 14, 11, 0, 0, 0, time.UTC),
+			EndedAt:       end(time.Date(2026, 9, 14, 11, 30, 0, 0, time.UTC)),
+			PausedSeconds: 600,
+			Completed:     true,
+		},
+		{
+			ID: 4, Task: "abandoned", PlannedSeconds: 1500,
+			StartedAt: mon, EndedAt: end(mon.Add(5 * time.Minute)),
 			Completed: false,
 		},
 		{
-			ID: 4, Task: "rest", Kind: focus.KindBreak, PlannedSeconds: 300,
-			StartedAt: now, EndedAt: end(now.Add(5 * time.Minute)),
+			ID: 5, Task: "rest", Kind: focus.KindBreak, PlannedSeconds: 300,
+			StartedAt: tue, EndedAt: end(tue.Add(5 * time.Minute)),
+			Completed: true,
+		},
+		{
+			// Outside a 30-day window ending 2026-09-15.
+			ID: 6, Task: "ancient", PlannedSeconds: 1500,
+			StartedAt: time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC),
+			EndedAt:   end(time.Date(2026, 7, 1, 9, 25, 0, 0, time.UTC)),
 			Completed: true,
 		},
 	}
 }
 
-func TestBuildWeekHeatBuckets(t *testing.T) {
+func TestBuildProductivityGridBuckets(t *testing.T) {
 	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
-	days := BuildWeekHeat(heatFixture(now), now)
-	if len(days) != 7 {
-		t.Fatalf("BuildWeekHeat len = %d, want 7", len(days))
+	g := BuildProductivityGrid(gridFixture(), now, 30)
+
+	if g.Count != 3 {
+		t.Fatalf("Count = %d, want 3 (break, abandoned, ancient excluded)", g.Count)
 	}
-	// Today holds only the 30m deep-work session; break + abandoned excluded.
-	today := days[6]
-	if today.Count != 1 || today.Total != 30*time.Minute {
-		t.Fatalf("today = %+v, want count 1 total 30m", today)
+	if g.Cells[0][8] != 30*time.Minute {
+		t.Fatalf("Mon 08 = %v, want 30m", g.Cells[0][8])
 	}
-	// Two days ago holds the 10m review session.
-	twoAgo := days[4]
-	if twoAgo.Count != 1 || twoAgo.Total != 10*time.Minute {
-		t.Fatalf("two days ago = %+v, want count 1 total 10m", twoAgo)
+	if g.Cells[1][9] != 10*time.Minute {
+		t.Fatalf("Tue 09 = %v, want 10m", g.Cells[1][9])
 	}
-	// Other days empty.
-	for i, d := range days {
-		if i == 6 || i == 4 {
-			continue
-		}
-		if d.Count != 0 || d.Total != 0 {
-			t.Fatalf("day %d = %+v, want empty", i, d)
-		}
+	if g.Cells[1][10] != 20*time.Minute {
+		t.Fatalf("Tue 10 = %v, want 20m", g.Cells[1][10])
 	}
-	// Oldest-first ordering.
-	for i := 1; i < len(days); i++ {
-		if !days[i].Date.After(days[i-1].Date) {
-			t.Fatalf("days not oldest-first: %v then %v", days[i-1].Date, days[i].Date)
-		}
+	if g.Cells[0][11] != 20*time.Minute {
+		t.Fatalf("Mon 11 = %v, want 20m honest (30 wall − 10 paused)", g.Cells[0][11])
+	}
+	if g.Total != 80*time.Minute {
+		t.Fatalf("Total = %v, want 80m", g.Total)
+	}
+	if g.MinHour != 8 || g.MaxHour != 11 {
+		t.Fatalf("hour range = %d–%d, want 8–11", g.MinHour, g.MaxHour)
+	}
+	if g.PeakWD != 0 || g.PeakHour != 8 || g.Peak != 30*time.Minute {
+		t.Fatalf("Peak = %s %d:00 %v, want Mon 8:00 30m", weekdayNames[g.PeakWD], g.PeakHour, g.Peak)
 	}
 }
 
-func TestRenderHeatmapGolden(t *testing.T) {
-	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
-	days := BuildWeekHeat(heatFixture(now), now)
-	got := RenderHeatmap(days)
-
-	if !strings.Contains(got, "Heatmap") {
-		t.Fatalf("heatmap should have header:\n%s", got)
+func TestBuildProductivityGridEmpty(t *testing.T) {
+	now := mondayNoon()
+	g := BuildProductivityGrid(nil, now, 30)
+	if g.MaxCell != 0 || g.Count != 0 || g.Total != 0 {
+		t.Fatalf("empty grid = %+v, want zeros", g)
 	}
-	// 30m today -> ▒, 10m two days ago -> ░, empties -> ·
-	for _, want := range []string{"▒", "░", "·"} {
+	if got := RenderProductivityGrid(g); !strings.Contains(got, "No completed sessions in the last 30 days") {
+		t.Fatalf("empty grid should say so:\n%s", got)
+	}
+}
+
+func TestRenderProductivityGridGolden(t *testing.T) {
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	got := RenderProductivityGrid(BuildProductivityGrid(gridFixture(), now, 30))
+
+	for _, want := range []string{
+		"Heatmap",
+		"When are you most productive?",
+		"Mon Tue Wed Thu Fri Sat Sun",
+		"08:00",
+		"11:00",
+		"███", // Mon 08 peak cell fills all three blocks
+		"Peak: Mon 08:00",
+		"Total: 1h20m across 3 sessions",
+	} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("heatmap should contain %q:\n%s", want, got)
+			t.Errorf("heatmap should contain %q:\n%s", want, got)
 		}
 	}
-	if !strings.Contains(got, "Week: 40m across 2 sessions") {
-		t.Fatalf("week summary missing:\n%s", got)
+	if strings.Contains(got, "abandoned") || strings.Contains(got, "ancient") {
+		t.Errorf("heatmap must not list excluded rows:\n%s", got)
 	}
-	if strings.Contains(got, "abandoned") || strings.Contains(got, "rest") {
-		t.Fatalf("heatmap must not list excluded rows:\n%s", got)
+	// Trace cell: Tue 09 holds 10m of a 30m max, so it must not be blank.
+	lines := strings.Split(got, "\n")
+	var nine string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "09:00") {
+			nine = l
+		}
+	}
+	if nine == "" {
+		t.Fatalf("heatmap should have a 09:00 row:\n%s", got)
+	}
+	if !strings.Contains(nine, "█") {
+		t.Errorf("09:00 row should show Tue activity:\n%s", nine)
 	}
 }
 
-func TestRenderHeatmapEmpty(t *testing.T) {
-	got := RenderHeatmap(nil)
-	if !strings.Contains(got, "No completed sessions this week") {
-		t.Fatalf("empty heatmap should say so:\n%s", got)
-	}
-	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
-	got = RenderHeatmap(BuildWeekHeat(nil, now))
-	if !strings.Contains(got, "No completed sessions this week") {
-		t.Fatalf("all-empty week should say so:\n%s", got)
-	}
-}
-
-func TestHeatBlockThresholds(t *testing.T) {
+func TestHourCell(t *testing.T) {
+	max := 30 * time.Minute
 	cases := map[time.Duration]string{
-		0:                "·",
-		5 * time.Minute:  "░",
-		30 * time.Minute: "▒",
-		90 * time.Minute: "▓",
-		3 * time.Hour:    "█",
-		-1 * time.Minute: "·",
+		0:                "   ",
+		30 * time.Minute: "███",
+		20 * time.Minute: "██ ",
+		10 * time.Minute: "█  ",
+		time.Minute:      "░  ",
+		-5 * time.Minute: "   ",
+		60 * time.Minute: "███", // clamped, never wider than 3
 	}
 	for d, want := range cases {
-		if got := heatBlock(d); got != want {
-			t.Errorf("heatBlock(%v) = %q, want %q", d, got, want)
+		if got := hourCell(d, max); got != want {
+			t.Errorf("hourCell(%v) = %q, want %q", d, got, want)
 		}
+	}
+	if got := hourCell(10*time.Minute, 0); got != "   " {
+		t.Errorf("hourCell with zero max = %q, want blank", got)
 	}
 }

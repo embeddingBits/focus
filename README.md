@@ -37,7 +37,7 @@ focus history --limit 5
 # Today's total focused time, session count, and average
 focus stats
 
-# 7-day activity heatmap (rolling window incl. today)
+# Weekday × hour productivity heatmap (trailing 30 days, --days N to change)
 focus heatmap
 ```
 

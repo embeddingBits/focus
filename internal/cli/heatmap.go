@@ -10,16 +10,21 @@ import (
 )
 
 func newHeatmapCmd() *cobra.Command {
+	var days int
 	cmd := &cobra.Command{
 		Use:   "heatmap",
-		Short: "Show this week's focus activity",
-		Long: `Show a 7-day activity heatmap of completed focus sessions.
+		Short: "Show when you are most productive",
+		Long: `Show a weekday × hour heatmap of completed focus sessions.
 
-The rolling window covers the last 7 local days including today. Each day
-shows its total honest focused time (wall-clock minus paused) and session
-count; breaks and abandoned sessions are excluded, consistent with stats.`,
+Each cell accumulates honest focused time (wall-clock minus paused) over
+the trailing window, with sessions spanning hour boundaries split
+proportionally. More blocks mean more focus relative to your hottest
+slot. Breaks and abandoned sessions are excluded, consistent with stats.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if days <= 0 {
+				return UsageError{fmt.Errorf("--days must be a positive integer, got %d", days)}
+			}
 			ctx := cmd.Context()
 			store, _, err := openStore(ctx)
 			if err != nil {
@@ -30,10 +35,11 @@ count; breaks and abandoned sessions are excluded, consistent with stats.`,
 			if err != nil {
 				return err
 			}
-			days := tui.BuildWeekHeat(records, time.Now())
-			fmt.Fprint(cmd.OutOrStdout(), tui.RenderHeatmap(days))
+			grid := tui.BuildProductivityGrid(records, time.Now(), days)
+			fmt.Fprint(cmd.OutOrStdout(), tui.RenderProductivityGrid(grid))
 			return nil
 		},
 	}
+	cmd.Flags().IntVar(&days, "days", 30, "trailing days to include")
 	return cmd
 }

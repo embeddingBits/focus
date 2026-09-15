@@ -54,6 +54,16 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   (work→short→work→long→work, ~5 min), then `history`/`stats` on the same
   `FOCUS_DATA_DIR`.
 
+## focus heatmap
+
+- Weekday × hour productivity grid: `internal/tui/heatmap.go`
+  (`ProductivityGrid`, clock-injected like `Session`; sessions split
+  proportionally across overlapped local hours, pause time spread evenly),
+  command in `internal/cli/heatmap.go` (`focus heatmap [--days N]`,
+  default 30). Breaks/abandoned excluded like stats; cells normalized to
+  the hottest slot (3 blocks max, ░ for trace). Additive only — frozen
+  Store/TUI contract untouched.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

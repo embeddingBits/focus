@@ -26,7 +26,17 @@ func seedCompletedSession(t *testing.T, ctx context.Context, store *storage.SQLi
 	}
 }
 
-func TestHeatmapCmdShowsWeek(t *testing.T) {
+func runHeatmap(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	cmd := newHeatmapCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return out.String(), err
+}
+
+func TestHeatmapCmdShowsGrid(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("FOCUS_DATA_DIR", dir)
@@ -42,37 +52,43 @@ func TestHeatmapCmdShowsWeek(t *testing.T) {
 	seedCompletedSession(t, ctx, store, "deep work", now.Add(-30*time.Minute), 25*time.Minute)
 	store.Close()
 
-	cmd := newHeatmapCmd()
-	out := &bytes.Buffer{}
-	cmd.SetOut(out)
-	cmd.SetArgs([]string{})
-	if err := cmd.Execute(); err != nil {
+	got, err := runHeatmap(t)
+	if err != nil {
 		t.Fatalf("heatmap execute: %v", err)
 	}
-	got := out.String()
-	if !strings.Contains(got, "Heatmap") {
-		t.Fatalf("heatmap output should have header:\n%s", got)
-	}
-	if !strings.Contains(got, "Week:") {
-		t.Fatalf("heatmap output should summarize the week:\n%s", got)
-	}
-	if !strings.Contains(got, "1 session") {
-		t.Fatalf("heatmap output should count the seeded session:\n%s", got)
+	for _, want := range []string{
+		"Heatmap",
+		"When are you most productive?",
+		"Mon Tue Wed Thu Fri Sat Sun",
+		"Peak:",
+		"1 session",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("heatmap output should contain %q:\n%s", want, got)
+		}
 	}
 }
 
-func TestHeatmapCmdEmptyWeek(t *testing.T) {
+func TestHeatmapCmdEmptyWindow(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("FOCUS_DATA_DIR", dir)
 
-	cmd := newHeatmapCmd()
-	out := &bytes.Buffer{}
-	cmd.SetOut(out)
-	cmd.SetArgs([]string{})
-	if err := cmd.Execute(); err != nil {
+	got, err := runHeatmap(t)
+	if err != nil {
 		t.Fatalf("heatmap execute: %v", err)
 	}
-	if !strings.Contains(out.String(), "No completed sessions this week") {
-		t.Fatalf("empty heatmap should say so:\n%s", out.String())
+	if !strings.Contains(got, "No completed sessions in the last 30 days") {
+		t.Fatalf("empty heatmap should say so:\n%s", got)
+	}
+}
+
+func TestHeatmapCmdBadDays(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("FOCUS_DATA_DIR", dir)
+
+	if _, err := runHeatmap(t, "--days", "0"); err == nil {
+		t.Fatal("--days 0 should fail")
+	} else if code := ExitCode(err); code != 2 {
+		t.Fatalf("--days 0 exit = %d, want 2 (usage)", code)
 	}
 }
