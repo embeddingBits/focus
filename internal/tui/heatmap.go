@@ -7,11 +7,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/focus-cli/focus/internal/focus"
 )
 
 // weekdayNames orders columns Monday-first, matching the productivity grid.
 var weekdayNames = []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+
+// GitHub-style cell shades: empty gray plus four greens, light to dark.
+var (
+	styleHeatNone = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleHeat1    = lipgloss.NewStyle().Foreground(lipgloss.Color("22"))
+	styleHeat2    = lipgloss.NewStyle().Foreground(lipgloss.Color("28"))
+	styleHeat3    = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+	styleHeat4    = lipgloss.NewStyle().Foreground(lipgloss.Color("40"))
+)
 
 // ProductivityGrid holds per-weekday per-hour focused totals over a trailing
 // window of days. Cells[mon0][hour] accumulates honest focused time
@@ -126,20 +136,40 @@ func splitSession(g *ProductivityGrid, r focus.SessionRecord, loc *time.Location
 	}
 }
 
-// hourCell renders one grid cell, 3 runes wide: more blocks mean more focus
-// relative to the hottest cell. Trace amounts that round to zero show as ░.
-func hourCell(v, max time.Duration) string {
+// heatLevel maps a cell to a GitHub-style intensity level 0–4 relative to
+// the hottest cell: 0 empty, 1–4 ascending quartiles of green.
+func heatLevel(v, max time.Duration) int {
 	if v <= 0 || max <= 0 {
-		return "   "
+		return 0
 	}
-	n := int(math.Round(3 * float64(v) / float64(max)))
-	if n <= 0 {
-		return "░  "
+	switch r := float64(v) / float64(max); {
+	case r <= 0.25:
+		return 1
+	case r <= 0.5:
+		return 2
+	case r <= 0.75:
+		return 3
+	default:
+		return 4
 	}
-	if n > 3 {
-		n = 3
+}
+
+// hourCell renders one grid square: □ when empty, ■ shaded light-to-dark
+// green with activity. Single-rune cells on a wide pitch read like
+// GitHub's contribution grid.
+func hourCell(v, max time.Duration) string {
+	switch heatLevel(v, max) {
+	case 1:
+		return styleHeat1.Render("■")
+	case 2:
+		return styleHeat2.Render("■")
+	case 3:
+		return styleHeat3.Render("■")
+	case 4:
+		return styleHeat4.Render("■")
+	default:
+		return styleHeatNone.Render("□")
 	}
-	return strings.Repeat("█", n) + strings.Repeat(" ", 3-n)
 }
 
 // RenderProductivityGrid renders the weekday × hour grid as plain styled
@@ -162,7 +192,7 @@ func RenderProductivityGrid(g ProductivityGrid) string {
 		row.WriteString(styleLabel.Render(fmt.Sprintf("%02d:00", h)) + "  ")
 		for wd := 0; wd < 7; wd++ {
 			if wd > 0 {
-				row.WriteString(" ")
+				row.WriteString("   ")
 			}
 			row.WriteString(hourCell(g.Cells[wd][h], g.MaxCell))
 		}

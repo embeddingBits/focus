@@ -110,7 +110,8 @@ func TestRenderProductivityGridGolden(t *testing.T) {
 		"Mon Tue Wed Thu Fri Sat Sun",
 		"08:00",
 		"11:00",
-		"███", // Mon 08 peak cell fills all three blocks
+		"■", // active cells are filled squares
+		"□", // empty weekend cells are outlines
 		"Peak: Mon 08:00",
 		"Total: 1h20m across 3 sessions",
 	} {
@@ -132,28 +133,39 @@ func TestRenderProductivityGridGolden(t *testing.T) {
 	if nine == "" {
 		t.Fatalf("heatmap should have a 09:00 row:\n%s", got)
 	}
-	if !strings.Contains(nine, "█") {
+	if !strings.Contains(nine, "■") {
 		t.Errorf("09:00 row should show Tue activity:\n%s", nine)
 	}
 }
 
-func TestHourCell(t *testing.T) {
-	max := 30 * time.Minute
-	cases := map[time.Duration]string{
-		0:                "   ",
-		30 * time.Minute: "███",
-		20 * time.Minute: "██ ",
-		10 * time.Minute: "█  ",
-		time.Minute:      "░  ",
-		-5 * time.Minute: "   ",
-		60 * time.Minute: "███", // clamped, never wider than 3
+func TestHeatLevel(t *testing.T) {
+	max := 120 * time.Minute
+	cases := map[time.Duration]int{
+		0:                 0,
+		-5 * time.Minute:  0,
+		time.Minute:       1,
+		30 * time.Minute:  1, // exactly the first quartile
+		60 * time.Minute:  2,
+		90 * time.Minute:  3,
+		120 * time.Minute: 4,
+		180 * time.Minute: 4, // clamped, never above 4
 	}
 	for d, want := range cases {
-		if got := hourCell(d, max); got != want {
-			t.Errorf("hourCell(%v) = %q, want %q", d, got, want)
+		if got := heatLevel(d, max); got != want {
+			t.Errorf("heatLevel(%v) = %d, want %d", d, got, want)
 		}
 	}
-	if got := hourCell(10*time.Minute, 0); got != "   " {
-		t.Errorf("hourCell with zero max = %q, want blank", got)
+	if got := heatLevel(10*time.Minute, 0); got != 0 {
+		t.Errorf("heatLevel with zero max = %d, want 0", got)
+	}
+}
+
+func TestHourCell(t *testing.T) {
+	max := 120 * time.Minute
+	if got := hourCell(0, max); got != "□" {
+		t.Errorf("hourCell(0) = %q, want outline square", got)
+	}
+	if got := hourCell(max, max); got != "■" {
+		t.Errorf("hourCell(max) = %q, want filled square", got)
 	}
 }

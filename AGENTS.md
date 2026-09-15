@@ -60,9 +60,9 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   (`ProductivityGrid`, clock-injected like `Session`; sessions split
   proportionally across overlapped local hours, pause time spread evenly),
   command in `internal/cli/heatmap.go` (`focus heatmap [--days N]`,
-  default 30). Breaks/abandoned excluded like stats; cells normalized to
-  the hottest slot (3 blocks max, ░ for trace). Additive only — frozen
-  Store/TUI contract untouched.
+  default 30). Breaks/abandoned excluded like stats; GitHub-style single
+  □/■ cells on a wide pitch, 4 green shades by quartile of the hottest
+  slot. Additive only — frozen Store/TUI contract untouched.
 
 ## Maintaining this file
 
