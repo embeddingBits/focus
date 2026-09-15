@@ -1,3 +1,7 @@
 # Built binary at repo root only (bare `focus` would also ignore internal/focus/).
 /focus
 *.db
+!graft/
+graft/.cache/
+graft/.graph
+/graft/
